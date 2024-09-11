@@ -1368,7 +1368,7 @@ SD_Error_t SD_GetCardStatus(SD_CardStatus_t* pCardStatus)
 static SD_Error_t SD_PowerON(void)
 {
     SD_Error_t ErrorState;
-    uint32_t   Response;
+    uint32_t   Response = 0;
     uint32_t   Count;
     uint32_t   ValidVoltage;
     uint32_t   SD_Type;
@@ -1376,6 +1376,7 @@ static SD_Error_t SD_PowerON(void)
 
     Count        = 0;
     ValidVoltage = 0;
+    Response     = 0;
     SD_Type      = SD_RESP_STD_CAPACITY;
 
     // Power ON Sequence -------------------------------------------------------
