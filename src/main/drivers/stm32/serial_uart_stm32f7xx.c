@@ -57,14 +57,14 @@ const uartHardware_t uartHardware[UARTDEV_COUNT] = {
         .rxPins = {
             { DEFIO_TAG_E(PA10), GPIO_AF7_USART1 },
             { DEFIO_TAG_E(PB7), GPIO_AF7_USART1 },
-#ifdef STM32F765xx
+#if defined(STM32F765xx) || defined(STM32F765xx_DEBUG)
             { DEFIO_TAG_E(PB15), GPIO_AF4_USART1 }
 #endif
         },
         .txPins = {
             { DEFIO_TAG_E(PA9), GPIO_AF7_USART1 },
             { DEFIO_TAG_E(PB6), GPIO_AF7_USART1 },
-#ifdef STM32F765xx
+#if defined(STM32F765xx) || defined(STM32F765xx_DEBUG)
             { DEFIO_TAG_E(PB14), GPIO_AF4_USART1 }
 #endif
         },
@@ -158,7 +158,7 @@ const uartHardware_t uartHardware[UARTDEV_COUNT] = {
         .rxPins = {
             { DEFIO_TAG_E(PA1), GPIO_AF8_UART4 },
             { DEFIO_TAG_E(PC11), GPIO_AF8_UART4 },
-#ifdef STM32F765xx
+#if defined(STM32F765xx) || defined(STM32F765xx_DEBUG)
             { DEFIO_TAG_E(PA11), GPIO_AF6_UART4 },
             { DEFIO_TAG_E(PD0), GPIO_AF8_UART4 }
 #endif
@@ -166,7 +166,7 @@ const uartHardware_t uartHardware[UARTDEV_COUNT] = {
         .txPins = {
             { DEFIO_TAG_E(PA0), GPIO_AF8_UART4 },
             { DEFIO_TAG_E(PC10), GPIO_AF8_UART4 },
-#ifdef STM32F765xx
+#if defined(STM32F765xx) || defined(STM32F765xx_DEBUG)
             { DEFIO_TAG_E(PA12), GPIO_AF6_UART4 },
             { DEFIO_TAG_E(PD1), GPIO_AF8_UART4 }
 #endif
@@ -196,7 +196,7 @@ const uartHardware_t uartHardware[UARTDEV_COUNT] = {
 #endif
         .rxPins = {
             { DEFIO_TAG_E(PD2), GPIO_AF8_UART5 },
-#ifdef STM32F765xx
+#if defined(STM32F765xx) || defined(STM32F765xx_DEBUG)
             { DEFIO_TAG_E(PB5), GPIO_AF1_UART5 },
             { DEFIO_TAG_E(PB8), GPIO_AF7_UART5 },
             { DEFIO_TAG_E(PB12), GPIO_AF8_UART5 }
@@ -204,7 +204,7 @@ const uartHardware_t uartHardware[UARTDEV_COUNT] = {
         },
         .txPins = {
             { DEFIO_TAG_E(PC12), GPIO_AF8_UART5 },
-#ifdef STM32F765xx
+#if defined(STM32F765xx) || defined(STM32F765xx_DEBUG)
             { DEFIO_TAG_E(PB6), GPIO_AF1_UART5 },
             { DEFIO_TAG_E(PB9), GPIO_AF7_UART5 },
             { DEFIO_TAG_E(PB13), GPIO_AF8_UART5 }
@@ -267,7 +267,7 @@ const uartHardware_t uartHardware[UARTDEV_COUNT] = {
         .rxPins = {
             { DEFIO_TAG_E(PE7), GPIO_AF8_UART7 },
             { DEFIO_TAG_E(PF6), GPIO_AF8_UART7 },
-#ifdef STM32F765xx
+#if defined(STM32F765xx) || defined(STM32F765xx_DEBUG)
             { DEFIO_TAG_E(PA8), GPIO_AF12_UART7 },
             { DEFIO_TAG_E(PB3), GPIO_AF12_UART7 }
 #endif
@@ -275,7 +275,7 @@ const uartHardware_t uartHardware[UARTDEV_COUNT] = {
         .txPins = {
             { DEFIO_TAG_E(PE8), GPIO_AF8_UART7 },
             { DEFIO_TAG_E(PF7), GPIO_AF8_UART7 },
-#ifdef STM32F765xx
+#if defined(STM32F765xx) || defined(STM32F765xx_DEBUG)
             { DEFIO_TAG_E(PA15), GPIO_AF12_UART7 },
             { DEFIO_TAG_E(PB4), GPIO_AF12_UART7 }
 #endif
