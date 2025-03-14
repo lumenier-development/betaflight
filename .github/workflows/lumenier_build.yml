@@ -40,7 +40,7 @@ jobs:
     runs-on: ubuntu-22.04
     strategy:
       matrix:
-        target: "MATEKH743"
+        target: ["MATEKH743"]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
