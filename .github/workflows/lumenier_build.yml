@@ -40,7 +40,7 @@ jobs:
     runs-on: ubuntu-22.04
     strategy:
       matrix:
-        target: ${{ fromJson(needs.setup.outputs.targets) }}
+        target: "MATEKH743"
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -54,7 +54,7 @@ jobs:
 
       - name: Hydrate configuration
         id: get-config
-        run: make MATEKH743
+        run: make configs
 
       - name: Build target (without revision)
         if: inputs.release_build == true
