@@ -115,6 +115,7 @@ FC_VER_PATCH := $(shell grep " FC_VERSION_PATCH" src/main/build/version.h | awk 
 
 FC_VER       := $(FC_VER_MAJOR).$(FC_VER_MINOR).$(FC_VER_PATCH)
 
+CONFIG_BRANCH ?= master
 # import config handling
 include $(MAKE_SCRIPT_DIR)/config.mk
 

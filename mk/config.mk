@@ -1,5 +1,5 @@
 
-CONFIGS_REPO_URL ?= https://github.com/betaflight/config
+CONFIGS_REPO_URL ?= https://github.com/lumenier-development/config
 
 BASE_CONFIGS      = $(sort $(notdir $(patsubst %/,%,$(dir $(wildcard $(CONFIG_DIR)/configs/*/config.h)))))
 
@@ -52,7 +52,7 @@ endif #config
 configs:
 ifeq ($(wildcard $(CONFIG_DIR)),)
 	@echo "Hydrating clone for configs: $(CONFIG_DIR)"
-	$(V0) git clone $(CONFIGS_REPO_URL) $(CONFIG_DIR)
+	$(V0) git clone -b $(CONFIG_BRANCH) $(CONFIGS_REPO_URL) $(CONFIG_DIR)
 else
 	$(V0) git -C $(CONFIG_DIR) pull origin
 endif

@@ -4,6 +4,7 @@
 name: Lumenier_build
 
 on: 
+  push:
   workflow_dispatch:
 
 jobs:
@@ -28,7 +29,7 @@ jobs:
 
       - name: Hydrate configuration
         id: get-config
-        run: make configs
+        run: make configs CONFIG_BRANCH="LUXF765NDAA"
 
       - name: Get all official build targets
         id: get-targets
@@ -40,7 +41,7 @@ jobs:
     runs-on: ubuntu-22.04
     strategy:
       matrix:
-        target: ["MATEKH743"]
+        target: ["LUXF765NDAA"]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -54,7 +55,7 @@ jobs:
 
       - name: Hydrate configuration
         id: get-config
-        run: make configs
+        run: make configs CONFIG_BRANCH="LUXF765NDAA"
 
       - name: Build target (without revision)
         if: inputs.release_build == true
