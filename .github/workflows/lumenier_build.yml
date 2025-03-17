@@ -39,7 +39,9 @@ jobs:
 
       - name: Hydrate configuration
         id: get-config
-        run: make configs CONFIG_BRANCH="$branch_name"
+        run: |
+          echo "Using branch: $branch_name"  # Debugging step
+          make configs CONFIG_BRANCH="$branch_name"
 
       - name: Get all official build targets
         id: get-targets
