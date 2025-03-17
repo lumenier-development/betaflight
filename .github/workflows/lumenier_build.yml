@@ -39,7 +39,7 @@ jobs:
 
       - name: Hydrate configuration
         id: get-config
-        run: make configs CONFIG_BRANCH="LUMENIER_LUX_F765_NDAA"
+        run: make configs CONFIG_BRANCH="$branch_name"
 
       - name: Get all official build targets
         id: get-targets
@@ -65,7 +65,7 @@ jobs:
 
       - name: Hydrate configuration
         id: get-config
-        run: make configs CONFIG_BRANCH="LUMENIER_LUX_F765_NDAA"
+        run: make configs CONFIG_BRANCH="$branch_name"
 
       - name: Build target (without revision)
         if: inputs.release_build == true
