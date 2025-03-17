@@ -23,7 +23,12 @@ jobs:
           path: tools
           key: ${{ runner.os }}-${{ hashFiles('mk/tools.mk') }}
 
-      - name: Check branch
+      - name: Download and install toolchain
+        if: steps.cache-toolchain.outputs.cache-hit != 'true'
+        run: make arm_sdk_install
+
+      - name: Hydrate configuration
+        id: get-config
         run: |
           if [ -z "${{ github.event.inputs.branch_name }}" ]; then
             branch_name="master"
@@ -32,15 +37,6 @@ jobs:
             branch_name="${{ github.event.inputs.branch_name }}"
             echo "Received branch name: ${{ github.event.inputs.branch_name }}"
           fi
-
-      - name: Download and install toolchain
-        if: steps.cache-toolchain.outputs.cache-hit != 'true'
-        run: make arm_sdk_install
-
-      - name: Hydrate configuration
-        id: get-config
-        run: |
-          echo "Using branch: $branch_name"  # Debugging step
           make configs CONFIG_BRANCH="$branch_name"
 
       - name: Get all official build targets
@@ -67,7 +63,13 @@ jobs:
 
       - name: Hydrate configuration
         id: get-config
-        run: make configs CONFIG_BRANCH="$branch_name"
+        run: |
+          if [ -z "${{ github.event.inputs.branch_name }}" ]; then
+            branch_name="master"
+          else
+            branch_name="${{ github.event.inputs.branch_name }}"
+          fi
+          make configs CONFIG_BRANCH="$branch_name"
 
       - name: Build target (without revision)
         if: inputs.release_build == true
