@@ -4,7 +4,7 @@
 name: Lumenier_build
 
 on: 
-  push:
+  workflow_dispatch:
 
 jobs:
   setup:
