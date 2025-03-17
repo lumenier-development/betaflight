@@ -6,6 +6,11 @@ name: Lumenier_build
 on: 
   push:
   workflow_dispatch:
+    inputs:
+      branch_name:
+        description: 'Config branch to build get target from.'
+        required: true
+        default: 'master'
 
 jobs:
   setup:
@@ -32,7 +37,7 @@ jobs:
         run: |
           if [ -z "${{ github.event.inputs.branch_name }}" ]; then
             branch_name="master"
-            echo "Warning: Config branch is missing. Defaulting to master."
+            echo "Warning: Config branch is missing or workflow dispatched on push. Defaulting to master."
           else
             branch_name="${{ github.event.inputs.branch_name }}"
             echo "Received branch name: ${{ github.event.inputs.branch_name }}"
