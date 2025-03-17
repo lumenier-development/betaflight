@@ -23,6 +23,15 @@ jobs:
           path: tools
           key: ${{ runner.os }}-${{ hashFiles('mk/tools.mk') }}
 
+      - name: Check branch
+        run: |
+          if [ -z "${{ github.event.inputs.branch_name }}" ]; then
+            branch_name="${GITHUB_REF#refs/heads/}"
+            echo "Warning: branch_name input is missing. Defaulting to current branch: $branch_name."
+          else
+            echo "Received branch name: ${{ github.event.inputs.branch_name }}"
+          fi
+
       - name: Download and install toolchain
         if: steps.cache-toolchain.outputs.cache-hit != 'true'
         run: make arm_sdk_install
