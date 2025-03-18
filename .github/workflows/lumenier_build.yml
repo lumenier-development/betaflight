@@ -95,7 +95,14 @@ jobs:
             identifier="${{ github.event.inputs.identifier }}"
           fi
 
-          mv obj/*.hex obj/$(basename $(obj/*.hex) .hex)_$identifier.hex
+          # Get the original hex file name with full path
+          original_hex_path=obj/*.hex
+
+          # Extract the filename from the path (basename without extension)
+          original_hex_name=$(basename $original_hex_path .hex)
+
+          # Rename the file
+          mv $original_hex_path obj/${original_hex_name}_$identifier.hex
 
       - name: Publish build artifacts
         uses: actions/upload-artifact@v4
