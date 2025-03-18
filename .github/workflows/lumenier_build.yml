@@ -15,14 +15,14 @@ on:
         description: "List of targets to build."
         required: false
         default: '[]'
-      identifier:
-        description: 'Commit hash from config repo.'
-        required: false
-        default: 'default'
       version:
         description: 'Git tag version of firmware'
         required: false
         default: 'latest'
+      identifier:
+        description: 'Commit hash from config repo.'
+        required: false
+        default: 'default'
 
 jobs:
   setup:
@@ -91,10 +91,26 @@ jobs:
       - name: Build target
         run: make EXTRA_FLAGS=-Werror ${{ matrix.target }}
 
+      - name: Rename hex file
+        run: |
+          if [ -z "${{ github.event.inputs.version }}" ]; then
+            version="latest"
+          else
+            version="${{ github.event.inputs.version }}"
+          fi
+
+          if [ -z "${{ github.event.inputs.identifier }}" ]; then
+            identifier="default"
+          else
+            identifier="${{ github.event.inputs.identifier }}"
+          fi
+
+          mv obj/${{ matrix.target }}.hex obj/${{ matrix.target }}_$version_$identifier.hex
+
       - name: Publish build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.target }}_${{ github.event.inputs.version }}_${{ github.event.inputs.identifier }}
+          name: ${{ matrix.target }}
           path: obj/*.hex
           retention-days: 60
 
