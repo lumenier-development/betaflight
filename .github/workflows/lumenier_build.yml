@@ -52,6 +52,9 @@ jobs:
         id: get-targets
         run: echo "targets=$(make targets-ci-print | jq -R -c 'split(" ")')" >> $GITHUB_OUTPUT
 
+      - name: Debug setup outputs
+        run: echo "Setup Targets: ${{ fromJSON(needs.setup.outputs.targets)}}"
+
   build:
     name: Build
     needs: setup
