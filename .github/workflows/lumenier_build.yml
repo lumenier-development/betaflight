@@ -38,7 +38,15 @@ jobs:
 
       - name: Hydrate configuration
         id: get-config
-        run: make configs
+        run: |
+          if [ -z "${{ github.event.inputs.branch_name }}" ]; then
+            branch_name="master"
+            echo "Warning: Config branch is missing or workflow dispatched on push. Defaulting to master."
+          else
+            branch_name="${{ github.event.inputs.branch_name }}"
+            echo "Received branch name: ${{ github.event.inputs.branch_name }}"
+          fi
+          make configs CONFIG_BRANCH="$branch_name"
 
       - name: Get all official build targets
         id: get-targets
@@ -64,20 +72,21 @@ jobs:
 
       - name: Hydrate configuration
         id: get-config
-        run: make configs
+        run: |
+          if [ -z "${{ github.event.inputs.branch_name }}" ]; then
+            branch_name="master"
+          else
+            branch_name="${{ github.event.inputs.branch_name }}"
+          fi
+          make configs CONFIG_BRANCH="$branch_name"
 
-      - name: Build target (without revision)
-        if: inputs.release_build == true
+      - name: Build target
         run: make EXTRA_FLAGS=-Werror ${{ matrix.target }}
-
-      - name: Build target (with revision)
-        if: inputs.release_build == false
-        run: make EXTRA_FLAGS=-Werror ${{ matrix.target }}_rev
 
       - name: Publish build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Assets
+          name: ${{ matrix.target }}
           path: obj/*.hex
           retention-days: 60
 
