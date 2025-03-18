@@ -15,6 +15,14 @@ on:
         description: "List of targets to build."
         required: false
         default: '[]'
+      identifier:
+        description: 'Commit hash from config repo.'
+        required: false
+        default: 'default'
+      version:
+        description: 'Git tag version of firmware'
+        required: false
+        default: 'latest'
 
 jobs:
   setup:
@@ -86,7 +94,7 @@ jobs:
       - name: Publish build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.target }}
+          name: ${{ matrix.target }}_${{ github.event.inputs.version }}_${{ github.event.inputs.identifier }}
           path: obj/*.hex
           retention-days: 60
 
