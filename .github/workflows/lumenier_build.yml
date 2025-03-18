@@ -58,8 +58,7 @@ jobs:
     runs-on: ubuntu-22.04
     strategy:
       matrix:
-        target: ${{ fromJSON(github.event.inputs.target_list) || fromJSON(needs.setup.outputs.targets) || '[]' }}
-
+        target: ${{ fromJson(needs.setup.outputs.targets) }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
