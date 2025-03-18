@@ -14,7 +14,7 @@ on:
       target_list: 
         description: "List of targets to build."
         required: false
-        default: "[]"
+        default: '[]'
 
 jobs:
   setup:
@@ -62,11 +62,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Debug setup outputs
-        run: |
-          echo "Raw Setup Targets: ${{ needs.setup.outputs.targets }}"
-          echo "Parsed Setup Targets: ${{ fromJson(needs.setup.outputs.targets) }}"
 
       - name: Fetch toolchain from cache
         uses: actions/cache@v4
