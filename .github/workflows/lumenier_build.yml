@@ -9,8 +9,12 @@ on:
     inputs:
       branch_name:
         description: 'Config branch to build get target from.'
-        required: true
+        required: false
         default: 'master'
+      target_list: 
+        description: "List of targets to build."
+        required: false
+        default: "[]"
 
 jobs:
   setup:
@@ -54,7 +58,7 @@ jobs:
     runs-on: ubuntu-22.04
     strategy:
       matrix:
-        target: ["LUXF765NDAA"]
+        target: ${{ fromJSON(inputs.target_list || '[]') || fromJSON(needs.setup.outputs.targets) }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
