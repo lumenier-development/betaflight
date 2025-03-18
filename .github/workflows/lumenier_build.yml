@@ -95,7 +95,7 @@ jobs:
             identifier="${{ github.event.inputs.identifier }}"
           fi
 
-          mv obj/*.hex obj/${{ matrix.target }}_$identifier.hex
+          mv obj/*.hex obj/$(basename $(obj/*.hex) .hex)_$identifier.hex
 
       - name: Publish build artifacts
         uses: actions/upload-artifact@v4
