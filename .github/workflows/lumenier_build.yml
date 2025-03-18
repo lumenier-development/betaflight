@@ -80,13 +80,8 @@ jobs:
           fi
           make configs CONFIG_BRANCH="$branch_name"
 
-      - name: Build target (without revision)
-        if: inputs.release_build == true
+      - name: Build target
         run: make EXTRA_FLAGS=-Werror ${{ matrix.target }}
-
-      - name: Build target (with revision)
-        if: inputs.release_build == false
-        run: make EXTRA_FLAGS=-Werror ${{ matrix.target }}_rev
 
       - name: Publish build artifacts
         uses: actions/upload-artifact@v4
