@@ -498,14 +498,6 @@
 #define SYSTEM_HSE_MHZ 0
 #endif
 
-// Number of pins that needs pre-init
-#ifdef USE_SPI
-#ifndef SPI_PREINIT_COUNT
-// 2 x 8 (GYROx2, BARO, MAG, MAX, FLASHx2, RX)
-#define SPI_PREINIT_COUNT 16
-#endif
-#endif
-
 #ifndef USE_BLACKBOX
 #undef USE_USB_MSC
 #endif
@@ -620,8 +612,9 @@ extern uint8_t eepromData[EEPROM_SIZE];
 #ifndef CONFIG_IN_FLASH
 #define CONFIG_IN_FLASH
 #endif
-extern uint8_t __config_start;   // configured via linker script when building binaries.
-extern uint8_t __config_end;
+struct linker_symbol;
+extern struct linker_symbol __config_start;   // configured via linker script when building binaries.
+extern struct linker_symbol __config_end;
 #endif
 
 #if defined(USE_EXST) && !defined(RAMBASED)

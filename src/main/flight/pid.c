@@ -36,7 +36,6 @@
 #include "config/config_reset.h"
 #include "config/simplified_tuning.h"
 
-#include "drivers/pwm_output.h"
 #include "drivers/sound_beeper.h"
 #include "drivers/time.h"
 
@@ -417,7 +416,7 @@ static float wingAdjustSetpoint(float currentPidSetpoint, int axis)
 #endif // USE_WING
 }
 
-float getTpaFactorClassic(float tpaArgument)
+static float getTpaFactorClassic(float tpaArgument)
 {
     static bool isTpaLowFaded = false;
     bool isThrottlePastTpaLowBreakpoint = (tpaArgument >= pidRuntime.tpaLowBreakpoint || pidRuntime.tpaLowBreakpoint <= 0.01f);
@@ -587,7 +586,7 @@ STATIC_UNIT_TESTED FAST_CODE_NOINLINE float pidLevel(int axis, const pidProfile_
             angleLimit = 85.0f; // allow autopilot to use whatever angle it needs to stop
         }
         // limit pilot requested angle to half the autopilot angle to avoid excess speed and chaotic stops
-        angleLimit = fminf(0.5f * apConfig()->max_angle, angleLimit);
+        angleLimit = fminf(0.5f * autopilotConfig()->maxAngle, angleLimit);
     }
 #endif
 

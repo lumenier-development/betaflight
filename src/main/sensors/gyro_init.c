@@ -69,6 +69,8 @@
 #include "sensors/gyro.h"
 #include "sensors/sensors.h"
 
+#include "gyro_init.h"
+
 #ifdef USE_MULTI_GYRO
 #define ACTIVE_GYRO ((gyro.gyroToUse == GYRO_CONFIG_USE_GYRO_2) ? &gyro.gyroSensor2 : &gyro.gyroSensor1)
 #else
@@ -498,6 +500,7 @@ STATIC_UNIT_TESTED gyroHardware_e gyroDetect(gyroDev_t *dev)
 #endif
 
     default:
+        UNUSED(dev);
         gyroHardware = GYRO_NONE;
     }
 

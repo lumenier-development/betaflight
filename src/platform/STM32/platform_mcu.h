@@ -399,7 +399,7 @@ extern uint8_t _dmaram_end__;
 #elif defined(STM32F7)
 #define UARTHARDWARE_MAX_PINS 4
 #elif defined(STM32H7)
-#define UARTHARDWARE_MAX_PINS 5
+#define UARTHARDWARE_MAX_PINS 6
 #elif defined(STM32G4)
 #define UARTHARDWARE_MAX_PINS 3
 #endif
@@ -417,4 +417,5 @@ extern uint8_t _dmaram_end__;
 #define DMA_TRAIT_CHANNEL 1
 #endif
 
+#define SERIAL_TRAIT_PIN_CONFIG 1
 #define USB_DP_PIN PA12

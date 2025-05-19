@@ -52,7 +52,7 @@ typedef struct {
 
 altHoldState_t altHold;
 
-void altHoldReset(void)
+static void altHoldReset(void)
 {
     resetAltitudeControl();
     altHold.targetAltitudeCm = getAltitudeCm();
@@ -62,13 +62,13 @@ void altHoldReset(void)
 void altHoldInit(void)
 {
     altHold.isActive = false;
-    altHold.deadband = altHoldConfig()->alt_hold_deadband / 100.0f;
-    altHold.allowStickAdjustment = altHoldConfig()->alt_hold_deadband;
-    altHold.maxVelocity = altHoldConfig()->alt_hold_adjust_rate * 10.0f; // 50 in CLI means 500cm/s
+    altHold.deadband = altHoldConfig()->deadband / 100.0f;
+    altHold.allowStickAdjustment = altHoldConfig()->deadband;
+    altHold.maxVelocity = altHoldConfig()->climbRate * 10.0f; // 50 in CLI means 500cm/s
     altHoldReset();
 }
 
-void altHoldProcessTransitions(void) {
+static void altHoldProcessTransitions(void) {
 
     if (FLIGHT_MODE(ALT_HOLD_MODE)) {
         if (!altHold.isActive) {
@@ -81,7 +81,7 @@ void altHoldProcessTransitions(void) {
 
     // ** the transition out of alt hold (exiting altHold) may be rough.  Some notes... **
     // The original PR had a gradual transition from hold throttle to pilot control throttle
-    // using !(altHoldRequested && altHold.isAltHoldActive) to run an exit function
+    // using !(altHoldRequested && altHold.isActive) to run an exit function
     // a cross-fade factor was sent to mixer.c based on time since the flight mode request was terminated
     // it was removed primarily to simplify this PR
 
@@ -90,7 +90,7 @@ void altHoldProcessTransitions(void) {
     // user throttle must be not more than half way out from hover for a stable hold
 }
 
-void altHoldUpdateTargetAltitude(void)
+static void altHoldUpdateTargetAltitude(void)
 {
     // User can adjust the target altitude with throttle, but only when
     // - throttle is outside deadband, and
@@ -101,8 +101,8 @@ void altHoldUpdateTargetAltitude(void)
 
     if (altHold.allowStickAdjustment && calculateThrottleStatus() != THROTTLE_LOW) {
         const float rcThrottle = rcCommand[THROTTLE];
-        const float lowThreshold = apConfig()->hover_throttle - altHold.deadband * (apConfig()->hover_throttle - PWM_RANGE_MIN);
-        const float highThreshold = apConfig()->hover_throttle + altHold.deadband * (PWM_RANGE_MAX - apConfig()->hover_throttle);
+        const float lowThreshold = autopilotConfig()->hoverThrottle - altHold.deadband * (autopilotConfig()->hoverThrottle - PWM_RANGE_MIN);
+        const float highThreshold = autopilotConfig()->hoverThrottle + altHold.deadband * (PWM_RANGE_MAX - autopilotConfig()->hoverThrottle);
 
         if (rcThrottle < lowThreshold) {
             stickFactor = scaleRangef(rcThrottle, PWM_RANGE_MIN, lowThreshold, -1.0f, 0.0f);
@@ -133,10 +133,10 @@ void altHoldUpdateTargetAltitude(void)
     }
 }
 
-void altHoldUpdate(void)
+static void altHoldUpdate(void)
 {
     // check if the user has changed the target altitude using sticks
-    if (altHoldConfig()->alt_hold_adjust_rate) {
+    if (altHoldConfig()->climbRate) {
         altHoldUpdateTargetAltitude();
     }
     altitudeControl(altHold.targetAltitudeCm, taskIntervalSeconds, altHold.targetVelocity);

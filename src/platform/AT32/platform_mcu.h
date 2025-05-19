@@ -139,7 +139,7 @@ typedef enum {DISABLE = 0, ENABLE = !DISABLE} FunctionalState;
 #define CHECK_SPI_RX_DATA_AVAILABLE(instance) LL_SPI_IsActiveFlag_RXNE(instance)
 #define SPI_RX_DATA_REGISTER(base) ((base)->DR)
 
-#define MAX_SPI_PIN_SEL    4
+#define MAX_SPI_PIN_SEL    5
 
 #define UART_TX_BUFFER_ATTRIBUTE                    // NONE
 #define UART_RX_BUFFER_ATTRIBUTE                    // NONE
@@ -147,6 +147,7 @@ typedef enum {DISABLE = 0, ENABLE = !DISABLE} FunctionalState;
 #define PLATFORM_TRAIT_RCC 1
 #define UART_TRAIT_AF_PIN  1
 #define UART_TRAIT_PINSWAP 1
+#define SERIAL_TRAIT_PIN_CONFIG 1
 
 #define UARTHARDWARE_MAX_PINS 5
 

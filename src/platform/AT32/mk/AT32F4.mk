@@ -61,8 +61,9 @@ VCP_INCLUDES = \
 DEVICE_STDPERIPH_SRC = $(STDPERIPH_SRC)
 
 INCLUDE_DIRS    := $(INCLUDE_DIRS) \
-                   $(TARGET_PLATFORM_DIR)/startup \
                    $(TARGET_PLATFORM_DIR) \
+                   $(TARGET_PLATFORM_DIR)/include \
+                   $(TARGET_PLATFORM_DIR)/startup \
                    $(PLATFORM_DIR)/common/stm32 \
                    $(STDPERIPH_DIR)/inc \
                    $(CMSIS_DIR)/cm4/core_support \
@@ -113,7 +114,9 @@ MCU_COMMON_SRC = \
             drivers/accgyro/accgyro_mpu.c \
             drivers/dshot_bitbang_decode.c \
             drivers/inverter.c \
-            drivers/pwm_output_dshot_shared.c \
+            common/stm32/pwm_output_dshot_shared.c \
+            common/stm32/dshot_dpwm.c \
+            common/stm32/dshot_bitbang_shared.c \
             $(MIDDLEWARES_DIR)/i2c_application_library/i2c_application.c \
             drivers/bus_i2c_timing.c \
             drivers/usb_msc_common.c \
@@ -133,6 +136,8 @@ MCU_COMMON_SRC = \
             msc/usbd_storage_sd_spi.c
 
 SPEED_OPTIMISED_SRC += \
+            common/stm32/dshot_bitbang_shared.c \
+            common/stm32/pwm_output_dshot_shared.c \
             common/stm32/bus_spi_hw.c \
             common/stm32/system.c
 

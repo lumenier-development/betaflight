@@ -35,7 +35,7 @@
 #include "drivers/dma.h"
 #include "drivers/dma_reqmap.h"
 #include "drivers/dshot.h"
-#include "drivers/dshot_bitbang_impl.h"
+#include "dshot_bitbang_impl.h"
 #include "drivers/dshot_command.h"
 #include "drivers/motor.h"
 #include "drivers/nvic.h"
@@ -114,7 +114,7 @@ void bbTimerChannelInit(bbPort_t *bbPort)
 }
 
 #ifdef USE_DMA_REGISTER_CACHE
-void bbLoadDMARegs(dmaResource_t *dmaResource, dmaRegCache_t *dmaRegCache)
+static void bbLoadDMARegs(dmaResource_t *dmaResource, dmaRegCache_t *dmaRegCache)
 {
     ((DMA_ARCH_TYPE *)dmaResource)->SCFG = dmaRegCache->SCFG;
     ((DMA_ARCH_TYPE *)dmaResource)->FCTRL = dmaRegCache->FCTRL;
