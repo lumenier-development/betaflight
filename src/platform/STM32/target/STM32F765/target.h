@@ -21,15 +21,15 @@
 #pragma once
 
 #ifndef TARGET_BOARD_IDENTIFIER
-#define TARGET_BOARD_IDENTIFIER "S745"
+#define TARGET_BOARD_IDENTIFIER "S765"
 #endif
 
 #ifndef USBD_PRODUCT_STRING
-#define USBD_PRODUCT_STRING     "Betaflight STM32F745"
+#define USBD_PRODUCT_STRING     "Betaflight STM32F765"
 #endif
 
-#ifndef STM32F745
-#define STM32F745
+#ifndef STM32F765
+#define STM32F765
 #endif
 
 #define USE_I2C_DEVICE_1
