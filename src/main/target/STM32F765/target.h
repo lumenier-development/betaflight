@@ -43,7 +43,7 @@
 
 #define USE_VCP
 
-#define UNIFIED_SERIAL_PORT_COUNT       1
+#define UNIFIED_SERIAL_PORT_COUNT       3
 
 #define USE_UART1
 #define USE_UART2
