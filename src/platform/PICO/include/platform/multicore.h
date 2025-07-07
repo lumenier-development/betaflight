@@ -21,23 +21,19 @@
 
 #pragma once
 
-#define IOCFG_OUT_PP        0
-#define IOCFG_OUT_OD        0
-#define IOCFG_AF_PP         0
-#define IOCFG_AF_OD         0
-#define IOCFG_IPD           0
-#define IOCFG_IPU           0
-#define IOCFG_IN_FLOATING   0
+#include "pico/multicore.h"
 
-#define SPIDEV_COUNT        0
+typedef enum multicoreCommand_e {
+    MULTICORE_CMD_NONE = 0,
+    MULTICORE_CMD_FUNC,
+    MULTICORE_CMD_FUNC_BLOCKING, // Command to execute a function on the second core and wait for completion
+    MULTICORE_CMD_STOP, // Command to stop the second core
+} multicoreCommand_e;
 
-// no serial pins are defined for the simulator
-#define SERIAL_TRAIT_PIN_CONFIG 0
+// Define function types for clarity
+typedef void core1_func_t(void);
 
-#define I2CDEV_COUNT        0
-
-#define RUN_LOOP_DELAY_US 50 // max 20khz run loop frequency
-#define USE_MAIN_ARGS
-#define GYRO_COUNT 1 // 1 Gyro
-
-typedef void* ADC_TypeDef; // Dummy definition for ADC_TypeDef
+void multicoreStart(void);
+void multicoreStop(void);
+void multicoreExecute(core1_func_t *func);
+void multicoreExecuteBlocking(core1_func_t *func);

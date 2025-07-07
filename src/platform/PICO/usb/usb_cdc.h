@@ -21,23 +21,18 @@
 
 #pragma once
 
-#define IOCFG_OUT_PP        0
-#define IOCFG_OUT_OD        0
-#define IOCFG_AF_PP         0
-#define IOCFG_AF_OD         0
-#define IOCFG_IPD           0
-#define IOCFG_IPU           0
-#define IOCFG_IN_FLOATING   0
+#include <stdint.h>
+#include <stdbool.h>
 
-#define SPIDEV_COUNT        0
+#include "platform.h"
 
-// no serial pins are defined for the simulator
-#define SERIAL_TRAIT_PIN_CONFIG 0
-
-#define I2CDEV_COUNT        0
-
-#define RUN_LOOP_DELAY_US 50 // max 20khz run loop frequency
-#define USE_MAIN_ARGS
-#define GYRO_COUNT 1 // 1 Gyro
-
-typedef void* ADC_TypeDef; // Dummy definition for ADC_TypeDef
+void cdc_usb_write_flush(void);
+int cdc_usb_write(const uint8_t *buf, unsigned length);
+int cdc_usb_read(uint8_t *buf, unsigned length);
+void cdc_usb_init(void);
+bool cdc_usb_deinit(void);
+bool cdc_usb_configured(void);
+bool cdc_usb_connected(void);
+bool cdc_usb_bytes_available(void);
+uint32_t cdc_usb_baud_rate(void);
+uint32_t cdc_usb_tx_bytes_free(void);

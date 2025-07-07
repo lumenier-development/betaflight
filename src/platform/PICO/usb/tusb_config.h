@@ -21,23 +21,15 @@
 
 #pragma once
 
-#define IOCFG_OUT_PP        0
-#define IOCFG_OUT_OD        0
-#define IOCFG_AF_PP         0
-#define IOCFG_AF_OD         0
-#define IOCFG_IPD           0
-#define IOCFG_IPU           0
-#define IOCFG_IN_FLOATING   0
+#define CFG_TUD_ENABLED         1
+#define CFG_TUSB_RHPORT0_MODE   OPT_MODE_DEVICE
+#define CFG_TUD_CDC             1
+#define CFG_TUD_CDC_RX_BUFSIZE  256
+#define CFG_TUD_CDC_TX_BUFSIZE  256
 
-#define SPIDEV_COUNT        0
+#define TUP_DCD_EDPT_ISO_ALLOC
+#define TUP_DCD_ENDPOINT_MAX    16
 
-// no serial pins are defined for the simulator
-#define SERIAL_TRAIT_PIN_CONFIG 0
+#define TU_ATTR_FAST_FUNC       __attribute__((section(".time_critical.tinyusb")))
 
-#define I2CDEV_COUNT        0
-
-#define RUN_LOOP_DELAY_US 50 // max 20khz run loop frequency
-#define USE_MAIN_ARGS
-#define GYRO_COUNT 1 // 1 Gyro
-
-typedef void* ADC_TypeDef; // Dummy definition for ADC_TypeDef
+#define CFG_TUSB_MCU OPT_MCU_RP2040

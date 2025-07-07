@@ -21,23 +21,7 @@
 
 #pragma once
 
-#define IOCFG_OUT_PP        0
-#define IOCFG_OUT_OD        0
-#define IOCFG_AF_PP         0
-#define IOCFG_AF_OD         0
-#define IOCFG_IPD           0
-#define IOCFG_IPU           0
-#define IOCFG_IN_FLOATING   0
+#define MAX_PERIPHERAL_DMA_OPTIONS  14
+#define MAX_TIMER_DMA_OPTIONS       22
 
-#define SPIDEV_COUNT        0
-
-// no serial pins are defined for the simulator
-#define SERIAL_TRAIT_PIN_CONFIG 0
-
-#define I2CDEV_COUNT        0
-
-#define RUN_LOOP_DELAY_US 50 // max 20khz run loop frequency
-#define USE_MAIN_ARGS
-#define GYRO_COUNT 1 // 1 Gyro
-
-typedef void* ADC_TypeDef; // Dummy definition for ADC_TypeDef
+#define USE_DMA_MUX
