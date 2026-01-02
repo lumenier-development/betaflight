@@ -615,6 +615,10 @@
 #endif
 #endif // USE_RANGEFINDER_XXX
 
+#ifndef USE_CYCLOPS
+#define USE_CYCLOPS
+#endif
+
 #ifndef USE_GPS_RESCUE
 #undef USE_CMS_GPS_RESCUE_MENU
 #endif

@@ -142,6 +142,8 @@
 
 #include "drivers/pinio.h"
 
+#include "drivers/LMNR/cyclops.h"
+
 #include "fc/controlrate_profile.h"
 #include "fc/core.h"
 #include "fc/gps_lap_timer.h"
@@ -675,6 +677,42 @@ char osdGetTemperatureSymbolForSelectedUnit(void)
         return SYM_F;
     default:
         return SYM_C;
+    }
+}
+#endif
+
+#ifdef USE_CYCLOPS
+/**
+ * Generates the following Cyclops elements:
+ *      - Number of targets detected
+ *      - Target Angle (degrees)
+ *      - Distance to target (meters)
+ */
+static void osdElementCyclops(osdElementParms_t *element)
+{
+    static uint8_t index = 0;
+    CyclopsRecvData cyclops_osd = getCyclopsData();
+
+    switch (index) {
+        case NUM_TARGETS_DETECTED:
+            tfp_sprintf(element->buff, "%d", cyclops_osd.num_targets_detected);
+            break;
+        case TARGET_ANGLE:
+            osdPrintFloat(element->buff, SYM_NONE, ((float)cyclops_osd.target_angle) / 10, "%1u", 1, false, SYM_GPS_DEGREE);
+            break;
+        case DISTANCE_TO_TARGET:
+            osdPrintFloat(element->buff, SYM_NONE, ((float)cyclops_osd.distance_to_target) / 10, "%1u", 1, false, SYM_M);
+            break;
+        default:
+            tfp_sprintf(element->buff, "%d", cyclops_osd.num_targets_detected);
+    }
+    element->elemOffsetY = index;
+
+    if (++index >= LIST_MAX) {
+        index = 0;
+    }
+    else {
+        element->rendered = false;
     }
 }
 #endif
@@ -1941,6 +1979,9 @@ static const uint8_t osdElementDisplayOrder[] = {
 #ifdef USE_RANGEFINDER
     OSD_LIDAR_DIST,
 #endif
+#ifdef USE_CYCLOPS
+    OSD_CYCLOPS,
+#endif
 };
 
 // Define the mapping between the OSD element id and the function to draw it
@@ -2087,6 +2128,9 @@ const osdElementDrawFn osdElementDrawFunction[OSD_ITEM_COUNT] = {
 #endif
 #ifdef USE_RANGEFINDER
     [OSD_LIDAR_DIST]              = osdElementLidarDist,
+#endif
+#ifdef USE_CYCLOPS
+    [OSD_CYCLOPS]                 = osdElementCyclops,
 #endif
 };
 

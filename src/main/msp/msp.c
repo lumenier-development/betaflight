@@ -72,6 +72,7 @@
 #include "drivers/vtx_common.h"
 #include "drivers/vtx_table.h"
 #include "drivers/rangefinder/rangefinder_lidarmt.h"
+#include "drivers/LMNR/cyclops.h"
 
 #include "fc/board_info.h"
 #include "fc/controlrate_profile.h"
@@ -3667,6 +3668,12 @@ static mspResult_e mspProcessInCommand(mspDescriptor_t srcDesc, int16_t cmdMSP, 
 
     case MSP2_SENSOR_OPTICALFLOW_MT:
         mtOpticalflowReceiveNewData(sbufPtr(src));
+        break;
+#endif
+
+#ifdef USE_CYCLOPS
+    case CYCLOPS_SENSOR_DATA:
+        CyclopsReceiveNewData(sbufPtr(src));
         break;
 #endif
 
