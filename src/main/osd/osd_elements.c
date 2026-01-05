@@ -688,6 +688,7 @@ char osdGetTemperatureSymbolForSelectedUnit(void)
  *      - Target Angle (degrees)
  *      - Distance to target (meters)
  */
+/**
 static void osdElementCyclops(osdElementParms_t *element)
 {
     static uint8_t index = 0;
@@ -714,6 +715,64 @@ static void osdElementCyclops(osdElementParms_t *element)
     else {
         element->rendered = false;
     }
+}
+*/
+
+static void osdElementCyclopsGrid(osdElementParms_t *element)
+{
+    static uint8_t index = 0;
+    const CyclopsRecvData cyclops_osd = getCyclopsData();
+
+    switch (index) {
+        case NUM_TARGETS_DETECTED:
+            tfp_sprintf(element->buff, "%d", cyclops_osd.num_targets_detected);
+            element->elemOffsetX = NUM_TARGETS_X;
+            element->elemOffsetY = NUM_TARGETS_Y;
+            break;
+        case TARGET_ANGLE:
+            // Clamp angle to -90..+90
+            const int16_t angle = constrain(cyclops_osd.target_angle / 10, CYCLOPS_ANGLE_MIN, CYCLOPS_ANGLE_MAX);
+
+            // Map -90..+90 -> 0..(WIDTH-1)
+            const uint8_t cursorX = scaleRange(
+                angle - CYCLOPS_ANGLE_MIN,                 // -90..+90 => 0..180
+                0, (CYCLOPS_ANGLE_MAX - CYCLOPS_ANGLE_MIN),// 180
+                0, CYCLOPS_OSD_OVERLAY_WIDTH - 1);
+
+            tfp_sprintf(element->buff, "%c", CYCLOPS_SYM_CURSOR);
+            element->elemOffsetX = cursorX;
+            element->elemOffsetY = 0;
+            break;
+        case DISTANCE_TO_TARGET:
+            osdPrintFloat(element->buff, SYM_NONE, ((float)cyclops_osd.distance_to_target) / 10, "%1u", 1, false, SYM_M);
+            element->elemOffsetX = DISTANCE_TO_TARGET_X;
+            element->elemOffsetY = DISTANCE_TO_TARGET_Y;
+            break;
+        default:
+            tfp_sprintf(element->buff, "%d", cyclops_osd.num_targets_detected);
+            element->elemOffsetX = NUM_TARGETS_X;
+            element->elemOffsetY = NUM_TARGETS_Y;
+    }
+
+    if (++index >= LIST_MAX) {
+        index = 0;
+    }
+    else {
+        element->rendered = false;
+    } 
+}
+
+static void osdBackgroundCyclopsGrid(osdElementParms_t *element)
+{
+    for (uint8_t i = 0; i < CYCLOPS_OSD_OVERLAY_WIDTH; i++) {
+        element->buff[i] = CYCLOPS_SYM_OVERLAY_HORIZONTAL;
+    }
+
+    element->buff[(CYCLOPS_OSD_OVERLAY_WIDTH - 1) / 2] = CYCLOPS_SYM_OVERLAY_CENTER;
+    element->buff[CYCLOPS_OSD_OVERLAY_WIDTH] = 0;  // string terminator
+
+    element->elemOffsetX = 0;
+    element->elemOffsetY = 0;
 }
 #endif
 
@@ -2130,7 +2189,7 @@ const osdElementDrawFn osdElementDrawFunction[OSD_ITEM_COUNT] = {
     [OSD_LIDAR_DIST]              = osdElementLidarDist,
 #endif
 #ifdef USE_CYCLOPS
-    [OSD_CYCLOPS]                 = osdElementCyclops,
+    [OSD_CYCLOPS]                 = osdElementCyclopsGrid,
 #endif
 };
 
@@ -2146,6 +2205,9 @@ const osdElementDrawFn osdElementBackgroundFunction[OSD_ITEM_COUNT] = {
     [OSD_STICK_OVERLAY_RIGHT]     = osdBackgroundStickOverlay,
 #endif
     [OSD_PILOT_NAME]              = osdBackgroundPilotName,
+#ifdef USE_CYCLOPS
+    [OSD_CYCLOPS]                 = osdBackgroundCyclopsGrid,
+#endif
 };
 
 static void osdAddActiveElement(osd_items_e element)

@@ -23,6 +23,20 @@
 #include "common/time.h"
 #include "drivers/io_types.h"
 
+#define CYCLOPS_OSD_OVERLAY_WIDTH       17
+#define CYCLOPS_SYM_OVERLAY_HORIZONTAL  SYM_STICK_OVERLAY_HORIZONTAL
+#define CYCLOPS_SYM_OVERLAY_CENTER      SYM_STICK_OVERLAY_CENTER
+
+#define CYCLOPS_ANGLE_MAX               90
+#define CYCLOPS_ANGLE_MIN               -90
+
+#define CYCLOPS_SYM_CURSOR              '*'
+
+#define NUM_TARGETS_X                   3
+#define NUM_TARGETS_Y                   1
+#define DISTANCE_TO_TARGET_X            11
+#define DISTANCE_TO_TARGET_Y            1
+
 typedef struct {
     uint8_t num_targets_detected;
     int16_t target_angle;
