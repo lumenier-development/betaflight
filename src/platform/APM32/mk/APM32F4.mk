@@ -2,6 +2,10 @@
 # APM32F4 Make file include
 #
 
+# Auto-hydrate APM32F4 submodule when building APM32 targets
+PLATFORM_SDK := apm32f4
+PLATFORM_SDK_STAMP := $(APM32F4_SDK_STAMP)
+
 #CMSIS
 CMSIS_DIR      := $(LIB_MAIN_DIR)/APM32F4/Libraries/Device
 STDPERIPH_DIR   = $(LIB_MAIN_DIR)/APM32F4/Libraries/APM32F4xx_DAL_Driver
@@ -27,6 +31,7 @@ STDPERIPH_SRC   = \
         apm32f4xx_dal_flash_ex.c \
         apm32f4xx_dal_flash_ramfunc.c \
         apm32f4xx_dal_gpio.c \
+        apm32f4xx_dal_gpio_ex.c \
         apm32f4xx_dal_hash.c \
         apm32f4xx_dal_hash_ex.c \
         apm32f4xx_dal_hcd.c \
@@ -36,7 +41,6 @@ STDPERIPH_SRC   = \
         apm32f4xx_dal_i2s_ex.c \
         apm32f4xx_dal_irda.c \
         apm32f4xx_dal_iwdt.c \
-        apm32f4xx_dal_log.c \
         apm32f4xx_dal_mmc.c \
         apm32f4xx_dal_nand.c \
         apm32f4xx_dal_nor.c \
@@ -46,6 +50,7 @@ STDPERIPH_SRC   = \
         apm32f4xx_dal_pmu.c \
         apm32f4xx_dal_pmu_ex.c \
         apm32f4xx_dal_qspi.c \
+        apm32f4xx_dal_qspi_ex.c \
         apm32f4xx_dal_rcm.c \
         apm32f4xx_dal_rcm_ex.c \
         apm32f4xx_dal_rng.c \
@@ -172,6 +177,7 @@ MCU_COMMON_SRC = \
         APM32/persistent_apm32.c \
         APM32/pwm_output_apm32.c \
         APM32/pwm_output_dshot_apm32.c \
+        common/stm32/rx_pwm_hw.c \
         APM32/rcm_apm32.c \
         APM32/serial_uart_apm32.c \
         APM32/timer_apm32.c \
@@ -193,7 +199,9 @@ MCU_COMMON_SRC = \
         APM32/system_apm32f4xx.c \
         common/stm32/ledstrip_ws2811_stm32.c \
         common/stm32/debug_pin.c \
-        common/stm32/adc_impl.c
+        common/stm32/adc_impl.c \
+        common/stm32/expresslrs_driver_hw.c \
+        common/stm32/fault_handlers.c
 
 VCP_SRC = \
         APM32/usb/vcp/usbd_cdc_descriptor.c \
@@ -212,7 +220,8 @@ MSC_SRC = \
         msc/emfat.c \
         msc/emfat_file.c \
         msc/usbd_storage_sd_spi.c \
-        msc/usbd_storage_sdio.c
+        msc/usbd_storage_sdio.c \
+        common/stm32/msc_sdio_storage.c
 
 SPEED_OPTIMISED_SRC += \
         common/stm32/dshot_bitbang_shared.c \

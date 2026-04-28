@@ -2,18 +2,20 @@ PG_SRC = \
             pg/adc.c \
             pg/alt_hold_multirotor.c \
             pg/alt_hold_wing.c \
-            pg/autopilot_multirotor.c \
-            pg/autopilot_wing.c \
+            pg/autopilot.c \
             pg/beeper.c \
             pg/beeper_dev.c \
             pg/board.c \
             pg/bus_i2c.c \
             pg/bus_quadspi.c \
             pg/bus_spi.c \
+            pg/can.c \
             pg/dashboard.c \
+            pg/dronecan.c \
             pg/displayport_profiles.c \
             pg/dyn_notch.c \
             pg/flash.c \
+            pg/flight_plan.c \
             pg/gimbal.c \
             pg/gps.c \
             pg/gps_lap_timer.c \
@@ -99,7 +101,7 @@ COMMON_SRC = \
             drivers/camera_control.c \
             drivers/display.c \
             drivers/display_canvas.c \
-            drivers/dma_common.c \
+            drivers/dma.c \
             drivers/io.c \
             drivers/io_preinit.c \
             drivers/light_led.c \
@@ -118,7 +120,7 @@ COMMON_SRC = \
             drivers/transponder_ir_erlt.c \
             fc/board_info.c \
             fc/dispatch.c \
-            fc/hardfaults.c \
+            fc/faults.c \
             fc/tasks.c \
             fc/runtime_config.c \
             fc/stats.c \
@@ -170,6 +172,9 @@ COMMON_SRC = \
             flight/pid.c \
             flight/pid_init.c \
             flight/position.c \
+            flight/position_estimator.c \
+            flight/position_filter.c \
+            flight/position_nav.c \
             flight/pos_hold_multirotor.c \
             flight/pos_hold_wing.c \
             flight/rpm_filter.c \
@@ -209,6 +214,7 @@ COMMON_SRC = \
             sensors/gyro.c \
             sensors/gyro_init.c \
             sensors/initialisation.c \
+            sensors/sensors.c \
             blackbox/blackbox.c \
             blackbox/blackbox_encoding.c \
             blackbox/blackbox_io.c \
@@ -239,9 +245,11 @@ COMMON_SRC = \
             drivers/rangefinder/rangefinder_lidartf.c \
             drivers/rangefinder/rangefinder_lidarmt.c \
             drivers/rangefinder/rangefinder_nooploop.c \
+            drivers/rangefinder/rangefinder_upt1.c \
             drivers/vtx_common.c \
             drivers/vtx_table.c \
             io/dashboard.c \
+            io/displayport_fb_osd.c \
             io/displayport_frsky_osd.c \
             io/displayport_max7456.c \
             io/displayport_msp.c \
@@ -257,6 +265,7 @@ COMMON_SRC = \
             io/ledstrip.c \
             io/pidaudio.c \
             osd/osd.c \
+            osd/osd_custom_text.c \
             osd/osd_elements.c \
             osd/osd_warnings.c \
             sensors/barometer.c \
@@ -312,6 +321,7 @@ COMMON_SRC += \
             drivers/barometer/barometer_bmp085.c \
             drivers/barometer/barometer_bmp280.c \
             drivers/barometer/barometer_bmp388.c \
+            drivers/barometer/barometer_bmp5xx.c \
             drivers/barometer/barometer_dps310.c \
             drivers/barometer/barometer_lps22df.c \
             drivers/barometer/barometer_lps.c \
@@ -324,6 +334,7 @@ COMMON_SRC += \
             drivers/compass/compass_ist8310.c \
             drivers/compass/compass_lis2mdl.c \
             drivers/compass/compass_lis3mdl.c \
+            drivers/compass/compass_mmc560x.c \
             drivers/compass/compass_mpu925x_ak8963.c \
             drivers/compass/compass_qmc5883.c \
             drivers/compass/compass_virtual.c \
@@ -357,6 +368,7 @@ RX_SRC = \
 FLASH_SRC += \
             drivers/flash/flash.c \
             drivers/flash/flash_m25p16.c \
+            drivers/flash/flash_mt29f.c \
             drivers/flash/flash_w25m.c \
             drivers/flash/flash_w25n.c \
             drivers/flash/flash_w25q128fv.c \
@@ -395,6 +407,7 @@ SIZE_OPTIMISED_SRC += \
             drivers/compass/compass_qmc5883.c \
             drivers/compass/compass_lis2mdl.c \
             drivers/compass/compass_lis3mdl.c \
+            drivers/compass/compass_mmc560x.c \
             drivers/compass/compass_ist8310.c \
             drivers/display_ug2864hsweg01.c \
             drivers/vtx_rtc6705_soft_spi.c \
@@ -522,6 +535,7 @@ SIZE_OPTIMISED_SRC += \
             io/vtx_control.c \
             io/spektrum_vtx_control.c \
             osd/osd.c \
+            osd/osd_custom_text.c \
             osd/osd_elements.c \
             osd/osd_warnings.c \
             rx/rx_bind.c \
@@ -545,7 +559,9 @@ endif
 SRC += $(FLASH_SRC) $(MSC_SRC) $(SDCARD_SRC) $(COMMON_SRC)
 
 #excludes
-SRC   := $(filter-out $(MCU_EXCLUDES), $(SRC))
+SRC                := $(filter-out $(MCU_EXCLUDES), $(SRC))
+SPEED_OPTIMISED_SRC := $(filter-out $(MCU_EXCLUDES), $(SPEED_OPTIMISED_SRC))
+SIZE_OPTIMISED_SRC  := $(filter-out $(MCU_EXCLUDES), $(SIZE_OPTIMISED_SRC))
 
 SRC += $(VCP_SRC)
 
@@ -559,3 +575,9 @@ INCLUDE_DIRS += $(LIB_MAIN_DIR)/$(OLC_DIR)
 SRC += $(OLC_DIR)/olc.c
 SIZE_OPTIMISED_SRC += $(OLC_DIR)/olc.c
 endif
+
+# libcanard (DroneCAN transport) and the Betaflight-side glue live in the
+# per-MCU makefiles: they're only wired into the build for families whose
+# platform mk adds a CAN driver (currently STM32G4 / H7 / C5). This keeps
+# non-CAN targets from having to compile a ~2k-line external library whose
+# symbols would never link.

@@ -64,6 +64,7 @@
 #include "io/asyncfatfs/asyncfatfs.h"
 #include "io/beeper.h"
 #include "io/dashboard.h"
+#include "io/dronecan/dronecan.h"
 #include "io/flashfs.h"
 #include "io/gimbal_control.h"
 #include "io/gps.h"
@@ -80,6 +81,9 @@
 #include "msp/msp_serial.h"
 
 #include "osd/osd.h"
+#if ENABLE_OSD_CUSTOM_TEXT
+#include "osd/osd_custom_text.h"
+#endif
 
 #include "pg/rx.h"
 #include "pg/motor.h"
@@ -280,7 +284,7 @@ static void taskUpdateMag(timeUs_t currentTimeUs)
 }
 #endif
 
-#if defined(USE_BARO) || defined(USE_GPS)
+#if defined(USE_BARO) || defined(USE_GPS) || defined(USE_RANGEFINDER)
 static void taskCalculateAltitude(timeUs_t currentTimeUs)
 {
     UNUSED(currentTimeUs);
@@ -409,7 +413,7 @@ task_attribute_t task_attributes[TASK_COUNT] = {
     [TASK_BARO] = DEFINE_TASK("BARO", NULL, NULL, taskUpdateBaro, TASK_PERIOD_HZ(TASK_BARO_RATE_HZ), TASK_PRIORITY_LOW),
 #endif
 
-#if defined(USE_BARO) || defined(USE_GPS)
+#if defined(USE_BARO) || defined(USE_GPS) || defined(USE_RANGEFINDER)
     [TASK_ALTITUDE] = DEFINE_TASK("ALTITUDE", NULL, NULL, taskCalculateAltitude, TASK_PERIOD_HZ(TASK_ALTITUDE_RATE_HZ), TASK_PRIORITY_LOW),
 #endif
 
@@ -477,6 +481,14 @@ task_attribute_t task_attributes[TASK_COUNT] = {
 
 #ifdef USE_GIMBAL
     [TASK_GIMBAL] = DEFINE_TASK("GIMBAL", NULL, NULL, gimbalUpdate, TASK_PERIOD_HZ(100), TASK_PRIORITY_MEDIUM),
+#endif
+
+#if ENABLE_OSD_CUSTOM_TEXT
+    [TASK_OSD_CUSTOM_TEXT] = DEFINE_TASK("OSD_CTEXT", NULL, NULL, osdCustomTextUpdate, TASK_PERIOD_HZ(100), TASK_PRIORITY_LOW),
+#endif
+
+#if ENABLE_DRONECAN
+    [TASK_DRONECAN] = DEFINE_TASK("DRONECAN", NULL, NULL, dronecanUpdate, TASK_PERIOD_HZ(50), TASK_PRIORITY_LOW),
 #endif
 };
 
@@ -568,11 +580,13 @@ void tasksInit(void)
 #endif
 
 #ifdef USE_ALTITUDE_HOLD
-    setTaskEnabled(TASK_ALTHOLD, sensors(SENSOR_BARO) || featureIsEnabled(FEATURE_GPS));
+    setTaskEnabled(TASK_ALTHOLD, sensors(SENSOR_BARO) ||
+                                 sensors(SENSOR_RANGEFINDER) ||
+                                 featureIsEnabled(FEATURE_GPS));
 #endif
 
 #ifdef USE_POSITION_HOLD
-    setTaskEnabled(TASK_POSHOLD, featureIsEnabled(FEATURE_GPS));
+    setTaskEnabled(TASK_POSHOLD, featureIsEnabled(FEATURE_GPS) || sensors(SENSOR_OPTICALFLOW));
 #endif
 
 #ifdef USE_MAG
@@ -583,8 +597,8 @@ void tasksInit(void)
     setTaskEnabled(TASK_BARO, sensors(SENSOR_BARO));
 #endif
 
-#if defined(USE_BARO) || defined(USE_GPS)
-    setTaskEnabled(TASK_ALTITUDE, sensors(SENSOR_BARO) || featureIsEnabled(FEATURE_GPS));
+#if defined(USE_BARO) || defined(USE_GPS) || defined(USE_RANGEFINDER)
+    setTaskEnabled(TASK_ALTITUDE, sensors(SENSOR_BARO) || featureIsEnabled(FEATURE_GPS) || sensors(SENSOR_RANGEFINDER));
 #endif
 
 #ifdef USE_DASHBOARD
@@ -660,7 +674,7 @@ void tasksInit(void)
     setTaskEnabled(TASK_SPEED_NEGOTIATION, useCRSF);
 #endif
 
-#ifdef SIMULATOR_MULTITHREAD
+#if ENABLE_SIMULATOR_MULTITHREAD
     rescheduleTask(TASK_RX, 1);
 #endif
 
@@ -670,5 +684,13 @@ void tasksInit(void)
 
 #ifdef USE_GIMBAL
     setTaskEnabled(TASK_GIMBAL, true);
+#endif
+
+#if ENABLE_OSD_CUSTOM_TEXT
+    setTaskEnabled(TASK_OSD_CUSTOM_TEXT, true);
+#endif
+
+#if ENABLE_DRONECAN
+    setTaskEnabled(TASK_DRONECAN, dronecanIsInitialised());
 #endif
 }
