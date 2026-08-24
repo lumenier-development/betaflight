@@ -23,6 +23,8 @@
 
 #include "platform.h"
 
+#if defined(USE_ACC_SPI_MPU6500) || defined(USE_GYRO_SPI_MPU6500)
+
 #include "common/axis.h"
 #include "common/maths.h"
 
@@ -76,6 +78,9 @@ uint8_t mpu6500SpiDetect(const extDevice_t *dev)
         break;
     case ICM42688P_WHO_AM_I_CONST:
         mpuDetected = ICM_42688P_SPI;
+        break;
+    case ICM42686P_WHO_AM_I_CONST:
+        mpuDetected = ICM_42686P_SPI;
         break;
     default:
         mpuDetected = MPU_NONE;
@@ -146,3 +151,5 @@ bool mpu6500SpiGyroDetect(gyroDev_t *gyro)
 
     return true;
 }
+
+#endif // USE_ACC_SPI_MPU6500 || USE_GYRO_SPI_MPU6500

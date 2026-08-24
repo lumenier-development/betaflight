@@ -41,6 +41,9 @@
 #include "drivers/rangefinder/rangefinder.h"
 #include "drivers/rangefinder/rangefinder_hcsr04.h"
 #include "drivers/rangefinder/rangefinder_lidartf.h"
+#include "drivers/rangefinder/rangefinder_lidarmt.h"
+#include "drivers/rangefinder/rangefinder_nooploop.h"
+#include "drivers/rangefinder/rangefinder_upt1.h"
 #include "drivers/time.h"
 
 #include "fc/runtime_config.h"
@@ -53,6 +56,7 @@
 #include "sensors/sensors.h"
 #include "sensors/rangefinder.h"
 #include "sensors/battery.h"
+
 
 //#include "uav_interconnect/uav_interconnect.h"
 
@@ -90,9 +94,8 @@ PG_RESET_TEMPLATE(sonarConfig_t, sonarConfig,
 static bool rangefinderDetect(rangefinderDev_t * dev, uint8_t rangefinderHardwareToUse)
 {
     rangefinderType_e rangefinderHardware = RANGEFINDER_NONE;
-    requestedSensors[SENSOR_INDEX_RANGEFINDER] = rangefinderHardwareToUse;
 
-#if !defined(USE_RANGEFINDER_HCSR04) && !defined(USE_RANGEFINDER_TF)
+#if !defined(USE_RANGEFINDER_HCSR04) && !defined(USE_RANGEFINDER_TF) && !defined(USE_RANGEFINDER_NOOPLOOP) && !defined(USE_RANGEFINDER_UPT1)
     UNUSED(dev);
 #endif
 
@@ -108,25 +111,57 @@ static bool rangefinderDetect(rangefinderDev_t * dev, uint8_t rangefinderHardwar
 #endif
             break;
 
-        case RANGEFINDER_TFMINI:
 #if defined(USE_RANGEFINDER_TF)
-            if (lidarTFminiDetect(dev)) {
-                rangefinderHardware = RANGEFINDER_TFMINI;
-                rescheduleTask(TASK_RANGEFINDER, TASK_PERIOD_MS(RANGEFINDER_TF_TASK_PERIOD_MS));
+        case RANGEFINDER_TFMINI:
+        case RANGEFINDER_TF02:
+        case RANGEFINDER_TFNOVA:
+            if (lidarTFDetect(dev, rangefinderHardwareToUse)) {
+                rangefinderHardware = rangefinderHardwareToUse;
+                rescheduleTask(TASK_RANGEFINDER, TASK_PERIOD_MS(dev->delayMs));
             }
 #endif
             break;
 
-        case RANGEFINDER_TF02:
-#if defined(USE_RANGEFINDER_TF)
-            if (lidarTF02Detect(dev)) {
-                rangefinderHardware = RANGEFINDER_TF02;
-                rescheduleTask(TASK_RANGEFINDER, TASK_PERIOD_MS(RANGEFINDER_TF_TASK_PERIOD_MS));
+#if defined(USE_RANGEFINDER_NOOPLOOP)
+        case RANGEFINDER_NOOPLOOP_F2:
+        case RANGEFINDER_NOOPLOOP_F2P:
+        case RANGEFINDER_NOOPLOOP_F2PH:
+        case RANGEFINDER_NOOPLOOP_F:
+        case RANGEFINDER_NOOPLOOP_FP:
+        case RANGEFINDER_NOOPLOOP_F2MINI:
+            if (nooploopDetect(dev, rangefinderHardwareToUse)) {
+                rangefinderHardware = rangefinderHardwareToUse;
+                rescheduleTask(TASK_RANGEFINDER, TASK_PERIOD_MS(dev->delayMs));
             }
-#endif
             break;
+#endif
+
+#if defined(USE_RANGEFINDER_MT)
+        case RANGEFINDER_MTF01:
+        case RANGEFINDER_MTF02:
+        case RANGEFINDER_MTF01P:
+        case RANGEFINDER_MTF02P:
+            if (mtRangefinderDetect(dev, rangefinderHardwareToUse)) {
+                rangefinderHardware = rangefinderHardwareToUse;
+                rescheduleTask(TASK_RANGEFINDER, TASK_PERIOD_MS(dev->delayMs));
+            }
+            break;
+#endif
+
+#if defined(USE_RANGEFINDER_UPT1)
+        case RANGEFINDER_UPT1:
+            if (rangefinderUPT1Detect(dev)) {
+                rangefinderHardware = RANGEFINDER_UPT1;
+                rescheduleTask(TASK_RANGEFINDER, TASK_PERIOD_MS(RANGEFINDER_UPT1_TASK_PERIOD_MS));
+            }
+            break;
+#endif
 
         case RANGEFINDER_NONE:
+            rangefinderHardware = RANGEFINDER_NONE;
+            break;
+
+        default:
             rangefinderHardware = RANGEFINDER_NONE;
             break;
     }
@@ -230,7 +265,7 @@ void rangefinderUpdate(void)
     }
 }
 
-bool isSurfaceAltitudeValid(void)
+static bool isSurfaceAltitudeValid(void)
 {
 
     /*
@@ -317,6 +352,8 @@ bool rangefinderProcess(float cosTiltAngle)
     *
     * When the ground is too far away or the tilt is too large, RANGEFINDER_OUT_OF_RANGE is returned.
     */
+    DEBUG_SET(DEBUG_RANGEFINDER, 4, lrintf(cosTiltAngle * 1000.0f));
+    DEBUG_SET(DEBUG_RANGEFINDER, 5, lrintf(rangefinder.maxTiltCos * 1000.0f));
     if (cosTiltAngle < rangefinder.maxTiltCos || rangefinder.rawAltitude < 0) {
         rangefinder.calculatedAltitude = RANGEFINDER_OUT_OF_RANGE;
     } else {

@@ -33,11 +33,15 @@ typedef enum {
     BOXANGLE,
     BOXHORIZON,
     BOXMAG,
+    BOXALTHOLD,
     BOXHEADFREE,
+    BOXCHIRP,
     BOXPASSTHRU,
     BOXFAILSAFE,
+    BOXPOSHOLD,
     BOXGPSRESCUE,
-    BOXID_FLIGHTMODE_LAST = BOXGPSRESCUE,
+    BOXAUTOPILOT,  // GPS waypoint following
+    BOXID_FLIGHTMODE_LAST = BOXAUTOPILOT,
 
 // When new flight modes are added, the parameter group version for 'modeActivationConditions' in src/main/fc/rc_modes.c has to be incremented to ensure that the RC modes configuration is reset.
 
@@ -61,7 +65,7 @@ typedef enum {
     BOXCAMERA1,
     BOXCAMERA2,
     BOXCAMERA3,
-    BOXFLIPOVERAFTERCRASH,
+    BOXCRASHFLIP,
     BOXPREARM,
     BOXBEEPGPSCOUNT,
     BOXVTXPITMODE,
@@ -79,6 +83,7 @@ typedef enum {
     BOXBEEPERMUTE,
     BOXREADY,
     BOXLAPTIMERRESET,
+    BOXWPCAPTURE,
     CHECKBOX_ITEM_COUNT
 } boxId_e;
 
@@ -91,6 +96,8 @@ typedef enum {
 typedef struct boxBitmask_s { uint32_t bits[(CHECKBOX_ITEM_COUNT + 31) / 32]; } boxBitmask_t;
 
 #define MAX_MODE_ACTIVATION_CONDITION_COUNT 20
+
+#define STICKY_MODE_BOOT_DELAY_US (5 * 1000 * 1000)
 
 #define CHANNEL_RANGE_MIN 900
 #define CHANNEL_RANGE_MAX 2100
@@ -123,12 +130,10 @@ PG_DECLARE_ARRAY(modeActivationCondition_t, MAX_MODE_ACTIVATION_CONDITION_COUNT,
 #if defined(USE_CUSTOM_BOX_NAMES)
 
 #define MAX_BOX_USER_NAME_LENGTH 16
-
+#define BOX_USER_NAME_COUNT      4
+STATIC_ASSERT(BOXUSER4 + 1 - BOXUSER1 == BOX_USER_NAME_COUNT, "Invalid BOX_USER_NAME_COUNT");
 typedef struct modeActivationConfig_s {
-    char box_user_1_name[MAX_BOX_USER_NAME_LENGTH];
-    char box_user_2_name[MAX_BOX_USER_NAME_LENGTH];
-    char box_user_3_name[MAX_BOX_USER_NAME_LENGTH];
-    char box_user_4_name[MAX_BOX_USER_NAME_LENGTH];
+    char box_user_names[BOX_USER_NAME_COUNT][MAX_BOX_USER_NAME_LENGTH];
 } modeActivationConfig_t;
 
 PG_DECLARE(modeActivationConfig_t, modeActivationConfig);
@@ -141,9 +146,9 @@ typedef struct modeActivationProfile_s {
 #define IS_RANGE_USABLE(range) ((range)->startStep < (range)->endStep)
 
 bool IS_RC_MODE_ACTIVE(boxId_e boxId);
-void rcModeUpdate(boxBitmask_t *newState);
+void rcModeUpdate(const boxBitmask_t *newState);
 
-bool airmodeIsEnabled(void);
+bool isAirmodeEnabled(void);
 
 bool isRangeActive(uint8_t auxChannelIndex, const channelRange_t *range);
 void updateActivatedModes(void);

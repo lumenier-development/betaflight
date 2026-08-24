@@ -74,6 +74,16 @@
 // 4 - 10ths % of tasks late in last second
 // 7 - Standard deviation of gyro cycle time in 100th of a us
 
+// DEBUG_TASK, requires USE_LATE_TASK_STATISTICS to be defined
+// 0 - Value of scheduler_debug_task setting
+// 1 - rate (Hz)
+// 2 - max (us)
+// 3 - average (us)
+// 4 - estimated execution time (us)
+// 5 - actual execution time (us)
+// 6 - difference between estimated and actual execution time
+// 7 - late count
+
 extern task_t tasks[];
 
 static FAST_DATA_ZERO_INIT task_t *currentTask = NULL;
@@ -108,9 +118,9 @@ static uint8_t skippedOSDAttempts = 0;
 #endif
 
 #if defined(USE_LATE_TASK_STATISTICS)
-static int16_t lateTaskCount = 0;
+static uint32_t lateTaskCount = 0;
 static uint32_t lateTaskTotal = 0;
-static int16_t taskCount = 0;
+static uint32_t taskCount = 0;
 static uint32_t lateTaskPercentage = 0;
 static uint32_t nextTimingCycles;
 static int32_t gyroCyclesNow;
@@ -126,14 +136,14 @@ static timeMs_t lastFailsafeCheckMs = 0;
 #endif
 STATIC_UNIT_TESTED FAST_DATA_ZERO_INIT task_t* taskQueueArray[TASK_COUNT + 1 + TASK_QUEUE_RESERVE]; // extra item for NULL pointer at end of queue (+ overflow check in UNTT_TEST)
 
-void queueClear(void)
+STATIC_UNIT_TESTED void queueClear(void)
 {
     memset(taskQueueArray, 0, sizeof(taskQueueArray));
     taskQueuePos = 0;
     taskQueueSize = 0;
 }
 
-bool queueContains(task_t *task)
+static bool queueContains(const task_t *task)
 {
     for (int ii = 0; ii < taskQueueSize; ++ii) {
         if (taskQueueArray[ii] == task) {
@@ -143,7 +153,7 @@ bool queueContains(task_t *task)
     return false;
 }
 
-bool queueAdd(task_t *task)
+STATIC_UNIT_TESTED bool queueAdd(task_t *task)
 {
     if ((taskQueueSize >= TASK_COUNT) || queueContains(task)) {
         return false;
@@ -159,7 +169,7 @@ bool queueAdd(task_t *task)
     return false;
 }
 
-bool queueRemove(task_t *task)
+STATIC_UNIT_TESTED bool queueRemove(task_t *task)
 {
     for (int ii = 0; ii < taskQueueSize; ++ii) {
         if (taskQueueArray[ii] == task) {
@@ -174,7 +184,7 @@ bool queueRemove(task_t *task)
 /*
  * Returns first item queue or NULL if queue empty
  */
-FAST_CODE task_t *queueFirst(void)
+STATIC_UNIT_TESTED FAST_CODE task_t *queueFirst(void)
 {
     taskQueuePos = 0;
     return taskQueueArray[0]; // guaranteed to be NULL if queue is empty
@@ -183,7 +193,7 @@ FAST_CODE task_t *queueFirst(void)
 /*
  * Returns next item in queue or NULL if at end of queue
  */
-FAST_CODE task_t *queueNext(void)
+STATIC_UNIT_TESTED FAST_CODE task_t *queueNext(void)
 {
     return taskQueueArray[++taskQueuePos]; // guaranteed to be NULL at end of queue
 }
@@ -204,7 +214,7 @@ void taskSystemLoad(timeUs_t currentTimeUs)
         schedulerIgnoreTaskExecTime();
     }
 
-#if defined(SIMULATOR_BUILD)
+#if ENABLE_SIMULATOR
     averageSystemLoadPercent = 0;
 #endif
 }
@@ -218,10 +228,10 @@ uint32_t getCpuPercentageLate(void)
 #endif
 }
 
-timeUs_t checkFuncMaxExecutionTimeUs;
-timeUs_t checkFuncTotalExecutionTimeUs;
-timeUs_t checkFuncMovingSumExecutionTimeUs;
-timeUs_t checkFuncMovingSumDeltaTimeUs;
+static timeUs_t checkFuncMaxExecutionTimeUs;
+static timeUs_t checkFuncTotalExecutionTimeUs;
+static timeUs_t checkFuncMovingSumExecutionTimeUs;
+static timeUs_t checkFuncMovingSumDeltaTimeUs;
 
 void getCheckFuncInfo(cfCheckFuncInfo_t *checkFuncInfo)
 {
@@ -233,21 +243,24 @@ void getCheckFuncInfo(cfCheckFuncInfo_t *checkFuncInfo)
 
 void getTaskInfo(taskId_e taskId, taskInfo_t * taskInfo)
 {
-    taskInfo->isEnabled = queueContains(getTask(taskId));
-    taskInfo->desiredPeriodUs = getTask(taskId)->attribute->desiredPeriodUs;
-    taskInfo->staticPriority = getTask(taskId)->attribute->staticPriority;
-    taskInfo->taskName = getTask(taskId)->attribute->taskName;
-    taskInfo->subTaskName = getTask(taskId)->attribute->subTaskName;
-    taskInfo->maxExecutionTimeUs = getTask(taskId)->maxExecutionTimeUs;
-    taskInfo->totalExecutionTimeUs = getTask(taskId)->totalExecutionTimeUs;
-    taskInfo->averageExecutionTime10thUs = getTask(taskId)->movingSumExecutionTime10thUs / TASK_STATS_MOVING_SUM_COUNT;
-    taskInfo->averageDeltaTime10thUs = getTask(taskId)->movingSumDeltaTime10thUs / TASK_STATS_MOVING_SUM_COUNT;
-    taskInfo->latestDeltaTimeUs = getTask(taskId)->taskLatestDeltaTimeUs;
-    taskInfo->movingAverageCycleTimeUs = getTask(taskId)->movingAverageCycleTimeUs;
+    task_t *taskPtr = getTask(taskId);
+    taskInfo->isEnabled = queueContains(taskPtr);
+    taskInfo->desiredPeriodUs = taskPtr->attribute->desiredPeriodUs;
+    taskInfo->staticPriority = taskPtr->attribute->staticPriority;
+    taskInfo->taskName = taskPtr->attribute->taskName;
+    taskInfo->subTaskName = taskPtr->attribute->subTaskName;
+    taskInfo->maxExecutionTimeUs = taskPtr->maxExecutionTimeUs;
+    taskInfo->totalExecutionTimeUs = taskPtr->totalExecutionTimeUs;
+    taskInfo->averageExecutionTime10thUs = taskPtr->movingSumExecutionTime10thUs / TASK_STATS_MOVING_SUM_COUNT;
+    taskInfo->averageDeltaTime10thUs = taskPtr->movingSumDeltaTime10thUs / TASK_STATS_MOVING_SUM_COUNT;
+    taskInfo->latestDeltaTimeUs = taskPtr->taskLatestDeltaTimeUs;
+    taskInfo->movingAverageLoad10thPct =  taskPtr->movingSumDeltaTime10thUs == 0 ? 0 : (taskPtr->movingSumStatesExecTime10thUs * 1000) / taskPtr->movingSumDeltaTime10thUs;
+    taskInfo->maxLoad10thPct = taskInfo->averageDeltaTime10thUs == 0 ? 0 : (taskPtr->maxStatesExecTimeUs * 10000) /  taskInfo->averageDeltaTime10thUs;
+
 #if defined(USE_LATE_TASK_STATISTICS)
-    taskInfo->lateCount = getTask(taskId)->lateCount;
-    taskInfo->runCount = getTask(taskId)->runCount;
-    taskInfo->execTime = getTask(taskId)->execTime;
+    taskInfo->lateCount = taskPtr->lateCount;
+    taskInfo->runCount = taskPtr->runCount;
+    taskInfo->execTime = taskPtr->execTime;
 #endif
 }
 
@@ -324,11 +337,13 @@ void schedulerResetTaskStatistics(taskId_e taskId)
         currentTask->movingSumDeltaTime10thUs = 0;
         currentTask->totalExecutionTimeUs = 0;
         currentTask->maxExecutionTimeUs = 0;
+        currentTask->maxStatesExecTimeUs = 0;
     } else if (taskId < TASK_COUNT) {
         getTask(taskId)->anticipatedExecutionTime = 0;
         getTask(taskId)->movingSumDeltaTime10thUs = 0;
         getTask(taskId)->totalExecutionTimeUs = 0;
         getTask(taskId)->maxExecutionTimeUs = 0;
+        getTask(taskId)->maxStatesExecTimeUs = 0;
     }
 }
 
@@ -336,9 +351,11 @@ void schedulerResetTaskMaxExecutionTime(taskId_e taskId)
 {
     if (taskId == TASK_SELF) {
         currentTask->maxExecutionTimeUs = 0;
+        currentTask->maxStatesExecTimeUs = 0;
     } else if (taskId < TASK_COUNT) {
         task_t *task = getTask(taskId);
         task->maxExecutionTimeUs = 0;
+        task->maxStatesExecTimeUs = 0;
 #if defined(USE_LATE_TASK_STATISTICS)
         task->lateCount = 0;
         task->runCount = 0;
@@ -402,30 +419,44 @@ FAST_CODE timeUs_t schedulerExecuteTask(task_t *selectedTask, timeUs_t currentTi
         ignoreCurrentTaskExecRate = false;
         ignoreCurrentTaskExecTime = false;
         taskNextStateTime = -1;
-        float period = currentTimeUs - selectedTask->lastExecutedAtUs;
         selectedTask->lastExecutedAtUs = currentTimeUs;
         selectedTask->lastDesiredAt += selectedTask->attribute->desiredPeriodUs;
         selectedTask->dynamicPriority = 0;
 
         // Execute task
         const timeUs_t currentTimeBeforeTaskCallUs = micros();
+#if defined(USE_LATE_TASK_STATISTICS)
+        const timeUs_t estimatedExecutionUs = selectedTask->execTime;
+#endif
         selectedTask->attribute->taskFunc(currentTimeBeforeTaskCallUs);
         taskExecutionTimeUs = micros() - currentTimeBeforeTaskCallUs;
         taskTotalExecutionTime += taskExecutionTimeUs;
+        if (!ignoreCurrentTaskExecTime) {
+            selectedTask->execTimeSinceStatesTime += taskExecutionTimeUs;
+        }
+
         selectedTask->movingSumExecutionTime10thUs += (taskExecutionTimeUs * 10) - selectedTask->movingSumExecutionTime10thUs / TASK_STATS_MOVING_SUM_COUNT;
         if (!ignoreCurrentTaskExecRate) {
             // Record task execution rate and max execution time
-            selectedTask->taskLatestDeltaTimeUs = cmpTimeUs(currentTimeUs, selectedTask->lastStatsAtUs);
+            uint32_t deltaStateTime = cmpTimeUs(currentTimeUs, selectedTask->lastStatsAtUs);
+            selectedTask->taskLatestDeltaTimeUs = deltaStateTime;
             selectedTask->movingSumDeltaTime10thUs += (selectedTask->taskLatestDeltaTimeUs * 10) - selectedTask->movingSumDeltaTime10thUs / TASK_STATS_MOVING_SUM_COUNT;
             selectedTask->lastStatsAtUs = currentTimeUs;
+            selectedTask->movingSumStatesExecTime10thUs += (selectedTask->execTimeSinceStatesTime * 10) - selectedTask->movingSumStatesExecTime10thUs / TASK_STATS_MOVING_SUM_COUNT;
+            selectedTask->maxStatesExecTimeUs = MAX(selectedTask->maxStatesExecTimeUs, selectedTask->execTimeSinceStatesTime);
+            selectedTask->execTimeSinceStatesTime = 0;
         }
 
         // Update estimate of expected task duration
         if (taskNextStateTime != -1) {
             selectedTask->anticipatedExecutionTime = taskNextStateTime << TASK_EXEC_TIME_SHIFT;
         } else if (!ignoreCurrentTaskExecTime) {
-            if (taskExecutionTimeUs > (selectedTask->anticipatedExecutionTime >> TASK_EXEC_TIME_SHIFT)) {
-                selectedTask->anticipatedExecutionTime = taskExecutionTimeUs << TASK_EXEC_TIME_SHIFT;
+            timeUs_t taskExecutionEstimateUs = taskExecutionTimeUs;
+            if ((TASK_EXEC_TIME_CLAMP_US != 0) && (taskExecutionEstimateUs > TASK_EXEC_TIME_CLAMP_US)) {
+                taskExecutionEstimateUs = TASK_EXEC_TIME_CLAMP_US;
+            }
+            if (taskExecutionEstimateUs > (selectedTask->anticipatedExecutionTime >> TASK_EXEC_TIME_SHIFT)) {
+                selectedTask->anticipatedExecutionTime = taskExecutionEstimateUs << TASK_EXEC_TIME_SHIFT;
             } else if (selectedTask->anticipatedExecutionTime > 1) {
                 // Slowly decay the max time
                 selectedTask->anticipatedExecutionTime--;
@@ -437,9 +468,21 @@ FAST_CODE timeUs_t schedulerExecuteTask(task_t *selectedTask, timeUs_t currentTi
         }
 
         selectedTask->totalExecutionTimeUs += taskExecutionTimeUs;   // time consumed by scheduler + task
-        selectedTask->movingAverageCycleTimeUs += 0.05f * (period - selectedTask->movingAverageCycleTimeUs);
 #if defined(USE_LATE_TASK_STATISTICS)
         selectedTask->runCount++;
+
+        if ((selectedTask - tasks) == schedulerConfig()->debugTask) {
+            timeUs_t averageDeltaTime10thUs = selectedTask->movingSumDeltaTime10thUs / TASK_STATS_MOVING_SUM_COUNT;
+            int16_t taskFrequency = averageDeltaTime10thUs == 0 ? 0 : lrintf(1e7f / averageDeltaTime10thUs);
+            DEBUG_SET(DEBUG_TASK, 0, schedulerConfig()->debugTask);
+            DEBUG_SET(DEBUG_TASK, 1, taskFrequency);
+            DEBUG_SET(DEBUG_TASK, 2, selectedTask->maxExecutionTimeUs);
+            DEBUG_SET(DEBUG_TASK, 3, selectedTask->movingSumExecutionTime10thUs / TASK_STATS_MOVING_SUM_COUNT / 10);
+            DEBUG_SET(DEBUG_TASK, 4, estimatedExecutionUs);
+            DEBUG_SET(DEBUG_TASK, 5, taskExecutionTimeUs);
+            DEBUG_SET(DEBUG_TASK, 6, estimatedExecutionUs - taskExecutionTimeUs);
+            DEBUG_SET(DEBUG_TASK, 7, selectedTask->lateCount);
+        }
 #endif
     }
 
@@ -575,7 +618,7 @@ FAST_CODE void scheduler(void)
                 // 10ths % of tasks late in last second
                 DEBUG_SET(DEBUG_TIMING_ACCURACY, 4, lateTaskPercentage);
 
-                float gyroCyclesStdDev = sqrt(devSquared/gyroCyclesCount);
+                float gyroCyclesStdDev = sqrtf(devSquared/gyroCyclesCount);
                 int32_t gyroCyclesStdDev100thus = clockCyclesTo100thMicros((int32_t)gyroCyclesStdDev);
                 DEBUG_SET(DEBUG_TIMING_ACCURACY, 7, gyroCyclesStdDev100thus);
                 DEBUG_SET(DEBUG_SCHEDULER_DETERMINISM, 7, gyroCyclesStdDev100thus);
@@ -641,7 +684,7 @@ FAST_CODE void scheduler(void)
                         minGyroPeriod = gyroCyclesNow;
                     }
                     // Crude detection of missed cycles caused by configurator traffic
-                    if ((gyroCyclesNow > maxGyroPeriod) && (gyroCyclesNow < (1.5 * minGyroPeriod))) {
+                    if ((gyroCyclesNow > maxGyroPeriod) && (gyroCyclesNow < minGyroPeriod + minGyroPeriod / 2)) {  // 1.5 * minGyroPeriod
                         maxGyroPeriod = gyroCyclesNow;
                     }
                 }

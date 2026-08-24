@@ -41,9 +41,11 @@
 #if defined(USE_FLASHFS)
 
 #include "build/debug.h"
+#include "common/maths.h"
 #include "common/printf.h"
-#include "drivers/flash.h"
+#include "drivers/flash/flash.h"
 #include "drivers/light_led.h"
+#include "drivers/time.h"
 
 #include "io/flashfs.h"
 
@@ -57,6 +59,7 @@ static const flashGeometry_t *flashGeometry = NULL;
 static uint32_t flashfsSize = 0;
 static flashfsState_e flashfsState = FLASHFS_IDLE;
 static flashSector_t eraseSectorCurrent = 0;
+static bool eraseOperationIsChipErase = false;
 
 static DMA_DATA_ZERO_INIT uint8_t flashWriteBuffer[FLASHFS_WRITE_BUFFER_SIZE];
 
@@ -82,20 +85,69 @@ static volatile uint8_t bufferTail = 0;
   */
 static volatile bool dataWritten = true;
 
-//#define CHECK_FLASH
-
-#ifdef CHECK_FLASH
-// Write an incrementing sequence of bytes instead of the requested data and verify
-DMA_DATA uint8_t checkFlashBuffer[FLASHFS_WRITE_BUFFER_SIZE];
-uint32_t checkFlashPtr = 0;
-uint32_t checkFlashLen = 0;
-uint8_t checkFlashWrite = 0x00;
-uint8_t checkFlashExpected = 0x00;
-uint32_t checkFlashErrors = 0;
-#endif
-
 // The position of the buffer's tail in the overall flash address space:
 static uint32_t tailAddress = 0;
+
+#ifdef USE_FLASH_TEST_PRBS
+// Write an incrementing sequence of bytes instead of the requested data and verify
+static DMA_DATA uint8_t checkFlashBuffer[FLASHFS_WRITE_BUFFER_SIZE];
+static uint32_t checkFlashPtr = 0;
+static uint32_t checkFlashLen = 0;
+static uint32_t checkFlashErrors = 0;
+static bool checkFlashActive = false;
+static uint32_t checkFlashSeedPRBS;
+
+static uint8_t checkFlashNextByte(void)
+{
+    uint32_t newLSB = ((checkFlashSeedPRBS >> 31) ^ (checkFlashSeedPRBS >> 28)) & 1;
+
+    checkFlashSeedPRBS = (checkFlashSeedPRBS << 1) | newLSB;
+
+    return checkFlashSeedPRBS & 0xff;
+}
+
+// Called from blackboxSetState() to start/stop writing of pseudo-random data to FLASH
+void checkFlashStart(void)
+{
+    DEBUG_SET(DEBUG_FLASH_TEST_PRBS, 0, 1);
+    checkFlashSeedPRBS = 0xdeadbeef;
+    checkFlashPtr = tailAddress;
+    checkFlashLen = 0;
+    checkFlashActive = true;
+}
+
+void checkFlashStop(void)
+{
+    checkFlashSeedPRBS = 0xdeadbeef;
+    checkFlashErrors = 0;
+
+    DEBUG_SET(DEBUG_FLASH_TEST_PRBS, 6, checkFlashLen / flashGeometry->pageSize);
+
+    // Verify the data written since flashfsSeekAbs() last called
+    while (checkFlashLen) {
+        uint32_t checkLen = MIN(checkFlashLen, sizeof(checkFlashBuffer));
+
+        // Don't read over a page boundary
+        checkLen = MIN(checkLen, flashGeometry->pageSize - (checkFlashPtr & (flashGeometry->pageSize - 1)));
+
+        flashReadBytes(checkFlashPtr, checkFlashBuffer, checkLen);
+
+        for (uint32_t i = 0; i < checkLen; i++) {
+            uint8_t expected = checkFlashNextByte();
+            if (checkFlashBuffer[i] != expected) {
+                checkFlashErrors++; // <-- insert breakpoint here to catch errors
+            }
+        }
+
+        checkFlashPtr += checkLen;
+        checkFlashLen -= checkLen;
+    }
+
+    DEBUG_SET(DEBUG_FLASH_TEST_PRBS, 7, checkFlashErrors);
+
+    checkFlashActive = false;
+}
+#endif
 
 static void flashfsClearBuffer(void)
 {
@@ -115,13 +167,18 @@ static void flashfsSetTailAddress(uint32_t address)
 void flashfsEraseCompletely(void)
 {
     if (flashGeometry->sectors > 0 && flashPartitionCount() > 0) {
-        // if there's a single FLASHFS partition and it uses the entire flash then do a full erase
-        const bool doFullErase = (flashPartitionCount() == 1) && (FLASH_PARTITION_SECTOR_COUNT(flashPartition) == flashGeometry->sectors);
+        // If there's a single FLASHFS partition and it uses the entire NOR flash then do a full erase.
+        const bool doFullErase = flashGeometry->flashType == FLASH_TYPE_NOR
+            && (flashPartitionCount() == 1)
+            && (FLASH_PARTITION_SECTOR_COUNT(flashPartition) == flashGeometry->sectors);
         if (doFullErase) {
             flashEraseCompletely();
+            eraseOperationIsChipErase = true;
+            flashfsState = FLASHFS_ERASING;
         } else {
             // start asynchronous erase of all sectors
             eraseSectorCurrent = flashPartition->startSector;
+            eraseOperationIsChipErase = false;
             flashfsState = FLASHFS_ERASING;
         }
     }
@@ -233,7 +290,7 @@ static void flashfsAdvanceTailInBuffer(uint32_t delta)
  *
  * Returns the number of bytes written
  */
-void flashfsWriteCallback(uint32_t arg)
+static void flashfsWriteCallback(uintptr_t arg)
 {
     // Advance the cursor in the file system to match the bytes we wrote
     flashfsSetTailAddress(tailAddress + arg);
@@ -265,10 +322,6 @@ static uint32_t flashfsWriteBuffers(uint8_t const **buffers, uint32_t *bufferSiz
         return 0;
     }
 
-#ifdef CHECK_FLASH
-    checkFlashPtr = tailAddress;
-#endif
-
     flashPageProgramBegin(tailAddress, flashfsWriteCallback);
 
     /* Mark that data has yet to be written. There is no race condition as the DMA engine is known
@@ -277,10 +330,6 @@ static uint32_t flashfsWriteBuffers(uint8_t const **buffers, uint32_t *bufferSiz
     dataWritten = false;
 
     bytesWritten = flashPageProgramContinue(buffers, bufferSizes, bufferCount);
-
-#ifdef CHECK_FLASH
-    checkFlashLen = bytesWritten;
-#endif
 
     flashPageProgramFinish();
 
@@ -318,12 +367,10 @@ static int flashfsGetDirtyDataBuffers(uint8_t const *buffers[], uint32_t bufferS
     return 0;
 }
 
-
 static bool flashfsNewData(void)
 {
     return dataWritten;
 }
-
 
 /**
  * Get the current offset of the file pointer within the volume.
@@ -360,20 +407,6 @@ bool flashfsFlushAsync(bool force)
         // The previous write has yet to complete
         return false;
     }
-
-#ifdef CHECK_FLASH
-    // Verify the data written last time
-    if (checkFlashLen) {
-        while (!flashIsReady());
-        flashReadBytes(checkFlashPtr, checkFlashBuffer, checkFlashLen);
-
-        for (uint32_t i = 0; i < checkFlashLen; i++) {
-            if (checkFlashBuffer[i] != checkFlashExpected++) {
-                checkFlashErrors++; // <-- insert breakpoint here to catch errors
-            }
-        }
-    }
-#endif
 
     bufCount = flashfsGetDirtyDataBuffers(buffers, bufferSizes);
     uint32_t bufferedBytes = bufferSizes[0] + bufferSizes[1];
@@ -415,7 +448,16 @@ void flashfsFlushSync(void)
 void flashfsEraseAsync(void)
 {
     if (flashfsState == FLASHFS_ERASING) {
-        if ((flashfsIsSupported() && flashIsReady())) {
+        if (eraseOperationIsChipErase) {
+            if (flashIsReadyOrFail()) {
+                eraseOperationIsChipErase = false;
+                flashfsState = FLASHFS_IDLE;
+                LED1_OFF;
+            }
+            return;
+        }
+
+        if (flashIsReady()) {
             if (eraseSectorCurrent <= flashPartition->endSector) {
                 // Erase sector
                 uint32_t sectorAddress = eraseSectorCurrent * flashGeometry->sectorSize;
@@ -443,8 +485,15 @@ void flashfsSeekAbs(uint32_t offset)
  */
 void flashfsWriteByte(uint8_t byte)
 {
-#ifdef CHECK_FLASH
-    byte = checkFlashWrite++;
+#ifdef USE_FLASH_TEST_PRBS
+    if (debugMode == DEBUG_FLASH_TEST_PRBS) {
+        debug[1]++;
+    }
+    if (checkFlashActive) {
+        byte = checkFlashNextByte();
+        checkFlashLen++;
+        DEBUG_SET(DEBUG_FLASH_TEST_PRBS, 2, checkFlashLen);
+    }
 #endif
 
     flashWriteBuffer[bufferHead++] = byte;
@@ -606,6 +655,9 @@ void flashfsClose(void)
 
         break;
     }
+
+    // Each log is expected to start on a 2K boundary
+    flashfsSetTailAddress((tailAddress + 2047) & ~(2047));
 }
 
 /**
@@ -632,7 +684,11 @@ void flashfsInit(void)
 bool flashfsVerifyEntireFlash(void)
 {
     flashfsEraseCompletely();
-    flashfsInit();
+
+    while (!flashfsIsReady()) {
+        flashfsEraseAsync();
+        delay(100);
+    }
 
     uint32_t address = 0;
     flashfsSeekAbs(address);
@@ -645,8 +701,12 @@ bool flashfsVerifyEntireFlash(void)
     for (address = 0; address < testLimit; address += bufferSize) {
         tfp_sprintf(buffer, "%08x >> **0123456789ABCDEF**", address);
         flashfsWrite((uint8_t*)buffer, strlen(buffer), true);
+        if ((address % 0x10000) == 0) {
+            LED0_TOGGLE;
+        }
+        // Don't overwrite the buffer if the FLASH is busy writing
+        flashfsFlushSync();
     }
-    flashfsFlushSync();
     flashfsClose();
 
     char expectedBuffer[bufferSize + 1];
@@ -663,6 +723,9 @@ bool flashfsVerifyEntireFlash(void)
         int result = strncmp(buffer, expectedBuffer, bufferSize);
         if (result != 0 || bytesRead != bufferSize) {
             verificationFailures++;
+        }
+        if ((address % 0x10000) == 0) {
+            LED0_TOGGLE;
         }
     }
     return verificationFailures == 0;

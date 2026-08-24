@@ -22,37 +22,38 @@
 
 static FAST_CODE void GYRO_FILTER_FUNCTION_NAME(void)
 {
+    float gyroADCfVec[XYZ_AXIS_COUNT] = {0.0f, 0.0f, 0.0f};
+
     for (int axis = 0; axis < XYZ_AXIS_COUNT; axis++) {
         // DEBUG_GYRO_RAW records the raw value read from the sensor (not zero offset, not scaled)
         GYRO_FILTER_DEBUG_SET(DEBUG_GYRO_RAW, axis, gyro.rawSensorDev->gyroADCRaw[axis]);
-
-        // DEBUG_GYRO_SCALED records the unfiltered, scaled gyro output
-        // If downsampling than the last value in the sample group will be output
-        GYRO_FILTER_DEBUG_SET(DEBUG_GYRO_SCALED, axis, lrintf(gyro.gyroADC[axis]));
 
         // DEBUG_GYRO_SAMPLE(0) Record the pre-downsample value for the selected debug axis (same as DEBUG_GYRO_SCALED)
         GYRO_FILTER_AXIS_DEBUG_SET(axis, DEBUG_GYRO_SAMPLE, 0, lrintf(gyro.gyroADC[axis]));
 
         // downsample the individual gyro samples
-        float gyroADCf = 0;
         if (gyro.downsampleFilterEnabled) {
             // using gyro lowpass 2 filter for downsampling
-            gyroADCf = gyro.sampleSum[axis];
+            gyroADCfVec[axis] = gyro.sampleSum[axis];
         } else {
             // using simple average for downsampling
             if (gyro.sampleCount) {
-                gyroADCf = gyro.sampleSum[axis] / gyro.sampleCount;
+                gyroADCfVec[axis] = gyro.sampleSum[axis] / gyro.sampleCount;
             }
             gyro.sampleSum[axis] = 0;
         }
 
         // DEBUG_GYRO_SAMPLE(1) Record the post-downsample value for the selected debug axis
-        GYRO_FILTER_AXIS_DEBUG_SET(axis, DEBUG_GYRO_SAMPLE, 1, lrintf(gyroADCf));
+        GYRO_FILTER_AXIS_DEBUG_SET(axis, DEBUG_GYRO_SAMPLE, 1, lrintf(gyroADCfVec[axis]));
 
 #ifdef USE_RPM_FILTER
-        gyroADCf = rpmFilterApply(axis, gyroADCf);
-#endif
+    }
+    
+    rpmFilterRun(gyroADCfVec);
 
+    for (int axis = 0; axis < XYZ_AXIS_COUNT; axis++) {
+#endif
+        float gyroADCf = gyroADCfVec[axis];
         // DEBUG_GYRO_SAMPLE(2) Record the post-RPM Filter value for the selected debug axis
         GYRO_FILTER_AXIS_DEBUG_SET(axis, DEBUG_GYRO_SAMPLE, 2, lrintf(gyroADCf));
 
@@ -68,7 +69,7 @@ static FAST_CODE void GYRO_FILTER_FUNCTION_NAME(void)
         if (isDynNotchActive()) {
             if (axis == gyro.gyroDebugAxis) {
                 GYRO_FILTER_DEBUG_SET(DEBUG_FFT, 0, lrintf(gyroADCf));
-                GYRO_FILTER_DEBUG_SET(DEBUG_FFT_FREQ, 3, lrintf(gyroADCf));
+                GYRO_FILTER_DEBUG_SET(DEBUG_FFT_FREQ, 0, lrintf(gyroADCf));
                 GYRO_FILTER_DEBUG_SET(DEBUG_DYN_LPF, 0, lrintf(gyroADCf));
             }
 
@@ -87,5 +88,8 @@ static FAST_CODE void GYRO_FILTER_FUNCTION_NAME(void)
 
         gyro.gyroADCf[axis] = gyroADCf;
     }
+
+    GYRO_FILTER_DEBUG_SET(DEBUG_GYRO_SAMPLE, 4, getAverageSystemLoadPercent());
+
     gyro.sampleCount = 0;
 }

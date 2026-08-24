@@ -55,6 +55,8 @@ extern "C" {
     #include "fc/core.h"
 
     #include "scheduler/scheduler.h"
+
+    extern boxBitmask_t stickyModesEverDisabled;
 }
 
 #include "unittest_macros.h"
@@ -68,6 +70,7 @@ void unsetArmingDisabled(armingDisableFlags_e flag)
 class RcControlsModesTest : public ::testing::Test {
 protected:
     virtual void SetUp() {
+        memset(&stickyModesEverDisabled, 0, sizeof(stickyModesEverDisabled));
     }
 };
 
@@ -244,6 +247,111 @@ void resetMillis(void)
     fixedMillis = 0;
 }
 
+TEST_F(RcControlsModesTest, updateActivatedModesBoxParalyzeLatchesForeverOnceActivated)
+{
+    // given
+    modeActivationConditionsMutable(7)->modeId = BOXPARALYZE;
+    modeActivationConditionsMutable(7)->auxChannelIndex = AUX1 - NON_AUX_CHANNEL_COUNT;
+    modeActivationConditionsMutable(7)->range.startStep = CHANNEL_VALUE_TO_STEP(1700);
+    modeActivationConditionsMutable(7)->range.endStep = CHANNEL_VALUE_TO_STEP(2100);
+
+    boxBitmask_t mask;
+    memset(&mask, 0, sizeof(mask));
+    rcModeUpdate(&mask);
+
+    memset(&rxRuntimeState, 0, sizeof(rxRuntimeState_t));
+    rxRuntimeState.channelCount = MAX_SUPPORTED_RC_CHANNEL_COUNT - NON_AUX_CHANNEL_COUNT;
+
+    for (int index = AUX1; index < MAX_SUPPORTED_RC_CHANNEL_COUNT; index++) {
+        rcData[index] = PWM_RANGE_MIDDLE;
+    }
+
+    analyzeModeActivationConditions();
+
+    // when: switch is in-range before the boot guard has ever seen it off
+    resetMillis();
+    rcData[AUX1] = PWM_RANGE_MAX;
+    updateActivatedModes();
+
+    // then: activation is withheld until the switch has been observed off
+    EXPECT_FALSE(IS_RC_MODE_ACTIVE(BOXPARALYZE));
+
+    // when: switch goes off and the boot delay elapses
+    rcData[AUX1] = PWM_RANGE_MIDDLE;
+    fixedMillis = STICKY_MODE_BOOT_DELAY_US / 1000 + 1;
+    updateActivatedModes();
+
+    // then: still inactive, but the guard is now armed
+    EXPECT_FALSE(IS_RC_MODE_ACTIVE(BOXPARALYZE));
+
+    // when: switch is moved into range
+    rcData[AUX1] = PWM_RANGE_MAX;
+    updateActivatedModes();
+
+    // then: mode activates normally
+    EXPECT_TRUE(IS_RC_MODE_ACTIVE(BOXPARALYZE));
+
+    // when: switch is moved back out of range
+    rcData[AUX1] = PWM_RANGE_MIDDLE;
+    updateActivatedModes();
+
+    // then: BOXPARALYZE is a kill switch and must stay active until reboot
+    EXPECT_TRUE(IS_RC_MODE_ACTIVE(BOXPARALYZE));
+}
+
+TEST_F(RcControlsModesTest, updateActivatedModesBoxBlackboxEraseDoesNotLatchForever)
+{
+    // given
+    modeActivationConditionsMutable(8)->modeId = BOXBLACKBOXERASE;
+    modeActivationConditionsMutable(8)->auxChannelIndex = AUX2 - NON_AUX_CHANNEL_COUNT;
+    modeActivationConditionsMutable(8)->range.startStep = CHANNEL_VALUE_TO_STEP(1700);
+    modeActivationConditionsMutable(8)->range.endStep = CHANNEL_VALUE_TO_STEP(2100);
+
+    boxBitmask_t mask;
+    memset(&mask, 0, sizeof(mask));
+    rcModeUpdate(&mask);
+
+    memset(&rxRuntimeState, 0, sizeof(rxRuntimeState_t));
+    rxRuntimeState.channelCount = MAX_SUPPORTED_RC_CHANNEL_COUNT - NON_AUX_CHANNEL_COUNT;
+
+    for (int index = AUX1; index < MAX_SUPPORTED_RC_CHANNEL_COUNT; index++) {
+        rcData[index] = PWM_RANGE_MIDDLE;
+    }
+
+    analyzeModeActivationConditions();
+
+    // when: switch is in-range before RX has ever been seen off (rcData defaults, e.g. before RX link)
+    resetMillis();
+    rcData[AUX2] = PWM_RANGE_MAX;
+    updateActivatedModes();
+
+    // then: erase is withheld (this is the #15173 boot-time spurious-erase bug)
+    EXPECT_FALSE(IS_RC_MODE_ACTIVE(BOXBLACKBOXERASE));
+
+    // when: switch goes off and the boot delay elapses
+    rcData[AUX2] = PWM_RANGE_MIDDLE;
+    fixedMillis = STICKY_MODE_BOOT_DELAY_US / 1000 + 1;
+    updateActivatedModes();
+
+    // then: still inactive, but the guard is now armed
+    EXPECT_FALSE(IS_RC_MODE_ACTIVE(BOXBLACKBOXERASE));
+
+    // when: switch is moved into range
+    rcData[AUX2] = PWM_RANGE_MAX;
+    updateActivatedModes();
+
+    // then: mode activates normally
+    EXPECT_TRUE(IS_RC_MODE_ACTIVE(BOXBLACKBOXERASE));
+
+    // when: switch is moved back out of range
+    rcData[AUX2] = PWM_RANGE_MIDDLE;
+    updateActivatedModes();
+
+    // then: unlike BOXPARALYZE, this must turn off again so blackboxUpdate() can
+    // leave BLACKBOX_STATE_ERASED and resume normal logging
+    EXPECT_FALSE(IS_RC_MODE_ACTIVE(BOXBLACKBOXERASE));
+}
+
 #define DEFAULT_MIN_CHECK 1100
 #define DEFAULT_MAX_CHECK 1900
 
@@ -262,9 +370,16 @@ protected:
     controlRateConfig_t controlRateConfig = {
         .thrMid8 = 0,
         .thrExpo8 = 0,
+        .rates_type = RATES_TYPE_BETAFLIGHT,
         .rcRates = {[FD_ROLL] = 90, [FD_PITCH] = 90},
         .rcExpo = {[FD_ROLL] = 0, [FD_PITCH] = 0, [FD_YAW] = 0},
         .rates = {0, 0, 0},
+        .throttle_limit_type = THROTTLE_LIMIT_TYPE_OFF,
+        .throttle_limit_percent = 100,
+        .rate_limit = {0, 0, 0},
+        .profileName = "default",
+        .quickRatesRcExpo = 0,
+        .thrHover8 = 0,
     };
 
     channelRange_t fullRange = {
@@ -286,6 +401,7 @@ protected:
         controlRateConfig.rcExpo[FD_PITCH] = 0;
         controlRateConfig.thrMid8 = 0;
         controlRateConfig.thrExpo8 = 0;
+        controlRateConfig.thrHover8 = 0;
         controlRateConfig.rcExpo[FD_YAW] = 0;
         controlRateConfig.rates[0] = 0;
         controlRateConfig.rates[1] = 0;
@@ -361,9 +477,16 @@ TEST_F(RcControlsAdjustmentsTest, processRcAdjustmentsWithRcRateFunctionSwitchUp
     controlRateConfig_t controlRateConfig = {
         .thrMid8 = 0,
         .thrExpo8 = 0,
+        .rates_type = RATES_TYPE_BETAFLIGHT,
         .rcRates = {[FD_ROLL] = 90, [FD_PITCH] = 90},
         .rcExpo = {[FD_ROLL] = 0, [FD_PITCH] = 0, [FD_YAW] = 0},
-        .rates = {0,0,0},
+        .rates = {0, 0, 0},
+        .throttle_limit_type = THROTTLE_LIMIT_TYPE_OFF,
+        .throttle_limit_percent = 100,
+        .rate_limit = {0, 0, 0},
+        .profileName = "default",
+        .quickRatesRcExpo = 0,
+        .thrHover8 = 0,
     };
 
     // and
@@ -549,6 +672,7 @@ TEST_F(RcControlsAdjustmentsTest, processPIDIncreasePidController0)
     pidProfile.pid[PID_YAW].P = 7;
     pidProfile.pid[PID_YAW].I = 17;
     pidProfile.pid[PID_YAW].D = 27;
+
     // and
     controlRateConfig_t controlRateConfig;
     memset(&controlRateConfig, 0, sizeof(controlRateConfig));
@@ -605,7 +729,10 @@ void setConfigDirty(void) {}
 void saveConfigAndNotify(void) {}
 void initRcProcessing(void) {}
 void changePidProfile(uint8_t) {}
+void changeBatteryProfile(uint8_t) {}
+uint8_t getCurrentBatteryProfileIndex(void) { return 0; }
 void pidInitConfig(const pidProfile_t *) {}
+void applySimplifiedTuningPids(pidProfile_t *) {}
 void accStartCalibration(void) {}
 void gyroStartCalibration(bool isFirstArmingCalibration)
 {
@@ -621,7 +748,7 @@ void dashboardDisablePageCycling() {}
 void dashboardEnablePageCycling() {}
 
 bool failsafeIsActive() { return false; }
-bool rxIsReceivingSignal() { return true; }
+bool isRxReceivingSignal() { return true; }
 bool failsafeIsReceivingRxData() { return true; }
 
 uint8_t getCurrentControlRateProfileIndex(void)
@@ -653,6 +780,8 @@ bool isTryingToArm(void) { return false; }
 void resetTryingToArm(void) {}
 void setLedProfile(uint8_t profile) { UNUSED(profile); }
 uint8_t getLedProfile(void) { return 0; }
+uint8_t getLedBrightness(void) { return 50; }
+void setLedBrightness(uint8_t brightness) { UNUSED(brightness); }
 void compassStartCalibration(void) {}
 void pinioBoxTaskControl(void) {}
 void schedulerIgnoreTaskExecTime(void) {}

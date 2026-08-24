@@ -42,7 +42,6 @@
 
 #if defined(USE_BARO) && (defined(USE_BARO_BMP280) || defined(USE_BARO_SPI_BMP280))
 
-
 #define BMP280_I2C_ADDR                      (0x76)
 #define BMP280_DEFAULT_CHIP_ID               (0x58)
 #define BME280_DEFAULT_CHIP_ID               (0x60)
@@ -118,7 +117,7 @@ static bool bmp280GetUP(baroDev_t *baro);
 
 STATIC_UNIT_TESTED void bmp280Calculate(int32_t *pressure, int32_t *temperature);
 
-void bmp280BusInit(const extDevice_t *dev)
+static void bmp280BusInit(const extDevice_t *dev)
 {
 #ifdef USE_BARO_SPI_BMP280
     if (dev->bus->busType == BUS_TYPE_SPI) {
@@ -132,11 +131,11 @@ void bmp280BusInit(const extDevice_t *dev)
 #endif
 }
 
-void bmp280BusDeinit(const extDevice_t *dev)
+static void bmp280BusDeinit(const extDevice_t *dev)
 {
 #ifdef USE_BARO_SPI_BMP280
     if (dev->bus->busType == BUS_TYPE_SPI) {
-        spiPreinitByIO(dev->busType_u.spi.csnPin);
+        ioPreinitByIO(dev->busType_u.spi.csnPin, IOCFG_IPU, PREINIT_PIN_STATE_HIGH);
     }
 #else
     UNUSED(dev);
@@ -160,7 +159,19 @@ bool bmp280Detect(baroDev_t *baro)
         defaultAddressApplied = true;
     }
 
-    busReadRegisterBuffer(dev, BMP280_CHIP_ID_REG, &bmp280_chip_id, 1);  /* read Chip Id */
+    bmp280_chip_id = 0;
+    busReadRegisterBuffer(dev, BMP280_CHIP_ID_REG, &bmp280_chip_id, 1);
+
+    if ((bmp280_chip_id != BMP280_DEFAULT_CHIP_ID) && (bmp280_chip_id != BME280_DEFAULT_CHIP_ID)) {
+        // Some BMP280 modules wire SDO to VDD, putting the chip at 0x77.
+        // Retry on the alternate address before giving up so boards with
+        // either strap value are auto-detected from a single config.
+        if (defaultAddressApplied && dev->bus->busType == BUS_TYPE_I2C) {
+            dev->busType_u.i2c.address = 0x77;
+            bmp280_chip_id = 0;
+            busReadRegisterBuffer(dev, BMP280_CHIP_ID_REG, &bmp280_chip_id, 1);
+        }
+    }
 
     if ((bmp280_chip_id != BMP280_DEFAULT_CHIP_ID) && (bmp280_chip_id != BME280_DEFAULT_CHIP_ID)) {
         bmp280BusDeinit(dev);

@@ -44,7 +44,9 @@ extern "C" {
     #include "drivers/system.h"
 
     #include "fc/runtime_config.h"
+    #include "fc/rc_modes.h"
     #include "config/config.h"
+    #include "flight/gps_rescue.h"
     #include "flight/imu.h"
 
     #include "io/serial.h"
@@ -63,6 +65,8 @@ extern "C" {
     #include "telemetry/msp_shared.h"
     #include "telemetry/smartport.h"
     #include "sensors/acceleration.h"
+    #include "sensors/barometer.h"
+    #include "sensors/compass.h"
 
     rssiSource_e rssiSource;
     bool handleMspFrame(uint8_t *frameStart, uint8_t frameLength, uint8_t *skipsBeforeResponse);
@@ -85,6 +89,7 @@ extern "C" {
     PG_REGISTER(systemConfig_t, systemConfig, PG_SYSTEM_CONFIG, 0);
     PG_REGISTER(rxConfig_t, rxConfig, PG_RX_CONFIG, 0);
     PG_REGISTER(accelerometerConfig_t, accelerometerConfig, PG_ACCELEROMETER_CONFIG,0);
+    PG_REGISTER(gpsRescueConfig_t, gpsRescueConfig, PG_GPS_RESCUE, 0);
 
     extern bool crsfFrameDone;
     extern crsfFrame_t crsfFrame;
@@ -93,7 +98,8 @@ extern "C" {
     extern struct mspPacket_s responsePacket;
 
     uint32_t dummyTimeUs;
-
+    baro_t baro;
+    mag_t mag;
 }
 
 #include "unittest_macros.h"
@@ -146,7 +152,7 @@ TEST(CrossFireMSPTest, ResponsePacketTest)
     }
 }
 
-//                               |   crsf                     | msp    
+//                               |   crsf                     | msp
 //                               sync size type to   from stts size fn   0    1    2    3    4
 const uint8_t crsfPidWrite1[] = {0x00,0x0C,0x7A,0xC8,0xEA,0x31,0x1E,0xCA,0x29,0x28,0x1E,0x3A,0x32};
 const uint8_t crsfPidWrite2[] = {0x00,0x0C,0x7A,0xC8,0xEA,0x22,0x23,0x46,0x2D,0x14,0x32,0x00,0x00};
@@ -224,10 +230,10 @@ TEST(CrossFireMSPTest, WriteResponseTest)
 
 }
 
-void testSendMspResponse(uint8_t *payload, const uint8_t )
+void testSendMspResponse(uint8_t *payload, const uint8_t payloadSize)
 {
     sbuf_t *plOut = sbufInit(&payloadOutputBuf, payloadOutput, payloadOutput + 64);
-    sbufWriteData(plOut, payload, *payload + 64);
+    sbufWriteData(plOut, payload, payloadSize);
     sbufSwitchToReader(&payloadOutputBuf, payloadOutput);
 }
 
@@ -282,12 +288,14 @@ extern "C" {
     }
 
     int32_t getEstimatedAltitudeCm(void) {
-    	return 0;
+        return 0;
     }
+
+    int16_t getEstimatedVario(void) { return 0; }
 
     bool featureIsEnabled(uint32_t) {return false;}
 
-    bool airmodeIsEnabled(void) {return true;}
+    bool isAirmodeEnabled(void) {return true;}
 
     mspDescriptor_t mspDescriptorAlloc(void) {return 0;}
 
@@ -322,4 +330,10 @@ extern "C" {
     }
 
     timeUs_t rxFrameTimeUs(void) { return 0; }
+
+    bool IS_RC_MODE_ACTIVE(boxId_e) { return false; }
+
+    bool gpsRescueIsConfigured(void) { return false; }
+
+    void schedulerIgnoreTaskExecTime(void) {}
 }

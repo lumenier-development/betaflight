@@ -22,7 +22,6 @@
 
 #include "rx/crsf_protocol.h"
 
-
 #define CRSF_PORT_OPTIONS       (SERIAL_STOPBITS_1 | SERIAL_PARITY_NO)
 #define CRSF_PORT_MODE          MODE_RXTX
 
@@ -87,5 +86,8 @@ struct rxRuntimeState_s;
 bool crsfRxInit(const struct rxConfig_s *initialRxConfig, struct rxRuntimeState_s *rxRuntimeState);
 void crsfRxUpdateBaudrate(uint32_t baudrate);
 bool crsfRxUseNegotiatedBaud(void);
+#if defined(USE_CRSF_V3)
+bool crsfRxIsEventDrivenTelemetry(void);
+#endif
 bool crsfRxIsActive(void);
 void crsfRxBind(void);

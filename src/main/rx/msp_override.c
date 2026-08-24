@@ -27,7 +27,6 @@
 #include "fc/rc_modes.h"
 #include "common/maths.h"
 
-
 uint16_t rxMspOverrideReadRawRc(const rxRuntimeState_t *rxRuntimeState, const rxConfig_t *rxConfig, uint8_t chan)
 {
     uint16_t rxSample = (rxRuntimeState->rcReadRawFn)(rxRuntimeState, chan);
@@ -36,7 +35,7 @@ uint16_t rxMspOverrideReadRawRc(const rxRuntimeState_t *rxRuntimeState, const rx
 
     bool override = (1 << chan) & rxConfig->msp_override_channels_mask;
 
-    if (IS_RC_MODE_ACTIVE(BOXMSPOVERRIDE) && override) {
+    if (IS_RC_MODE_ACTIVE(BOXMSPOVERRIDE) && override && rxMspIsRcChannelFresh(chan)) {
         return overrideSample;
     } else {
         return rxSample;

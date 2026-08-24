@@ -2,10 +2,13 @@
 #
 # Installers for tools
 #
-# NOTE: These are not tied to the default goals
-#       and must be invoked manually
+# NOTE: These are not tied to the default goals and must be invoked manually
 #
-# ARM SDK Version: 10.3-2021.10
+# ARM SDK Version: 13.3.Rel1
+#
+# Release date: July 04, 2024
+#
+# PICO SDK Version: 2.X - July 03, 2025
 #
 ###############################################################
 
@@ -16,53 +19,67 @@
 ##############################
 
 # Set up ARM (STM32) SDK
-ARM_SDK_DIR ?= $(TOOLS_DIR)/gcc-arm-none-eabi-10.3-2021.10
 # Checked below, Should match the output of $(shell arm-none-eabi-gcc -dumpversion)
-GCC_REQUIRED_VERSION ?= 10.3.1
-
-.PHONY: arm_sdk_version
-
-arm_sdk_version:
-	$(V1) $(ARM_SDK_PREFIX)gcc --version
+# must match arm-none-eabi-gcc-<version> file in arm sdk distribution
+GCC_REQUIRED_VERSION ?= 13.3.1
 
 ## arm_sdk_install   : Install Arm SDK
 .PHONY: arm_sdk_install
 
-ARM_SDK_URL_BASE  := https://developer.arm.com/-/media/Files/downloads/gnu-rm/10.3-2021.10/gcc-arm-none-eabi-10.3-2021.10
-# source: https://developer.arm.com/open-source/gnu-toolchain/gnu-rm/downloads
-ifeq ($(OSFAMILY), linux)
-  ARM_SDK_URL  := $(ARM_SDK_URL_BASE)-$(shell uname -m)-linux.tar.bz2
-endif
-
-ifeq ($(OSFAMILY), macosx)
-  ARM_SDK_URL  := $(ARM_SDK_URL_BASE)-mac.tar.bz2
-endif
-
-ifeq ($(OSFAMILY), windows)
-  ARM_SDK_URL  := $(ARM_SDK_URL_BASE)-win32.zip
+# source: https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads
+ifeq ($(OSFAMILY)-$(ARCHFAMILY), linux-x86_64)
+  ARM_SDK_URL := https://developer.arm.com/-/media/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi.tar.xz
+  DL_CHECKSUM = 0601a9588bc5b9c99ad2b56133b7f118
+else ifeq ($(OSFAMILY)-$(ARCHFAMILY), macosx-x86_64)
+  ARM_SDK_URL := https://developer.arm.com/-/media/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-darwin-x86_64-arm-none-eabi.tar.xz
+  DL_CHECKSUM = 4bb141e44b831635fde4e8139d470f1f
+else ifeq ($(OSFAMILY)-$(ARCHFAMILY), macosx-arm64)
+  ARM_SDK_URL := https://developer.arm.com/-/media/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-darwin-arm64-arm-none-eabi.tar.xz
+  DL_CHECKSUM = f1c18320bb3121fa89dca11399273f4e
+else ifeq ($(OSFAMILY), windows)
+  ARM_SDK_URL := https://developer.arm.com/-/media/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-mingw-w64-i686-arm-none-eabi.zip
+  DL_CHECKSUM = 39d9882ca0eb475e81170ae826c1435d
+else
+  $(error No toolchain URL defined for $(OSFAMILY)-$(ARCHFAMILY))
 endif
 
 ARM_SDK_FILE := $(notdir $(ARM_SDK_URL))
+# remove compression suffixes
+ARM_SDK_DIR := $(TOOLS_DIR)/$(patsubst %.zip,%, 	\
+			    $(patsubst %.tar.xz,%, 	\
+			    $(notdir $(ARM_SDK_URL))))
 
-SDK_INSTALL_MARKER := $(ARM_SDK_DIR)/bin/arm-none-eabi-gcc-$(GCC_REQUIRED_VERSION)
+SDK_INSTALL_MARKER := $(ARM_SDK_DIR)/.installed
+
+.PHONY: arm_sdk_version
+
+arm_sdk_version: | $(ARM_SDK_DIR)
+	$(V1) $(ARM_SDK_DIR)/bin/arm-none-eabi-gcc --version
 
 # order-only prereq on directory existance:
 arm_sdk_install: | $(TOOLS_DIR)
 arm_sdk_install: arm_sdk_download $(SDK_INSTALL_MARKER)
 
-$(SDK_INSTALL_MARKER):
-ifneq ($(OSFAMILY), windows)
-        # binary only release so just extract it
-	$(V1) tar -C $(TOOLS_DIR) -xjf "$(DL_DIR)/$(ARM_SDK_FILE)"
+$(SDK_INSTALL_MARKER): $(DL_DIR)/$(ARM_SDK_FILE)
+        # verify ckecksum first
+	@checksum=$$(md5sum "$<" | awk '{print $$1}'); \
+	if [ "$$checksum" != "$(DL_CHECKSUM)" ]; then \
+		echo "$@ Checksum mismatch! Expected $(DL_CHECKSUM), got $$checksum."; \
+		exit 1; \
+	fi
+ifeq ($(OSFAMILY), windows)
+	$(V1) unzip -q -d $(TOOLS_DIR) "$<"
 else
-	$(V1) unzip -q -d $(ARM_SDK_DIR) "$(DL_DIR)/$(ARM_SDK_FILE)"
+        # binary only release so just extract it
+	$(V1) tar -C $(TOOLS_DIR) -xf "$<"
 endif
+	$(V1) touch $(SDK_INSTALL_MARKER)
 
 .PHONY: arm_sdk_download
 arm_sdk_download: | $(DL_DIR)
 arm_sdk_download: $(DL_DIR)/$(ARM_SDK_FILE)
 $(DL_DIR)/$(ARM_SDK_FILE):
-    # download the source only if it's newer than what we already have
+        # download the source only if it's newer than what we already have
 	$(V1) curl -L -k -o "$@" $(if $(wildcard $@), -z "$@",) "$(ARM_SDK_URL)"
 
 ## arm_sdk_clean     : Uninstall Arm SDK
@@ -260,16 +277,12 @@ zip_clean:
 
 ifeq ($(shell [ -d "$(ARM_SDK_DIR)" ] && echo "exists"), exists)
   ARM_SDK_PREFIX := $(ARM_SDK_DIR)/bin/arm-none-eabi-
-else ifeq (,$(filter %_install test% clean% %-print checks help configs, $(MAKECMDGOALS)))
-  GCC_VERSION = $(shell arm-none-eabi-gcc -dumpversion)
-  ifeq ($(GCC_VERSION),)
-    $(error **ERROR** arm-none-eabi-gcc not in the PATH. Run 'make arm_sdk_install' to install automatically in the tools folder of this repo)
-  else ifneq ($(GCC_VERSION), $(GCC_REQUIRED_VERSION))
-    $(error **ERROR** your arm-none-eabi-gcc is '$(GCC_VERSION)', but '$(GCC_REQUIRED_VERSION)' is expected. Override with 'GCC_REQUIRED_VERSION' in mk/local.mk or run 'make arm_sdk_install' to install the right version automatically in the tools folder of this repo)
+else ifeq (,$(filter %_sdk %_install test% clean% %-print checks help configs platform-%, $(MAKECMDGOALS)))
+  # Try to find ARM toolchain in PATH (validated later after platform is known)
+  GCC_VERSION = $(shell arm-none-eabi-gcc -dumpversion 2>/dev/null)
+  ifneq ($(GCC_VERSION),)
+    ARM_SDK_PREFIX ?= arm-none-eabi-
   endif
-
-  # ARM toolchain is in the path, and the version is what's required.
-  ARM_SDK_PREFIX ?= arm-none-eabi-
 endif
 
 ifeq ($(shell [ -d "$(ZIP_DIR)" ] && echo "exists"), exists)
@@ -316,3 +329,86 @@ breakpad_clean:
 	$(V1) [ ! -d "$(BREAKPAD_DIR)" ] || $(RM) -rf $(BREAKPAD_DIR)
 	@echo " CLEAN        $(BREAKPAD_DL_FILE)"
 	$(V1) $(RM) -f $(BREAKPAD_DL_FILE)
+
+# Platform-specific tools
+# Each platform tools.mk appends to PLATFORM_SDKS and defines per-SDK properties:
+#   PLATFORM_SDK_<name>_SUBMODULE  - submodule path (e.g. lib/modules/pico-sdk)
+#   PLATFORM_SDK_<name>_HYDRATE   - make target to hydrate the SDK
+#   PLATFORM_SDK_<name>_TOOLS     - make targets to install required toolchains and tools
+#
+# 'none' is the default for targets with no toolchain needs (e.g. SITL).
+# 'arm' is for ARM-based targets without a platform-specific SDK submodule.
+# Platform SDKs declare their toolchain in _TOOLS (e.g. arm_sdk_install, esp_tools_install).
+PLATFORM_SDKS :=
+PLATFORM_SDK_arm_TOOLS      := arm_sdk_install
+PLATFORM_SDK_arm_CC         := $(if $(ARM_SDK_PREFIX),$(ARM_SDK_PREFIX)gcc,arm-none-eabi-gcc)
+PLATFORM_SDK_arm_CC_VERSION := $(GCC_REQUIRED_VERSION)
+PLATFORM_SDK_arm_CC_INSTALL := arm_sdk_install
+
+include $(wildcard $(PLATFORM_DIR)/*/mk/tools.mk)
+
+## platform-sdk-list-print : list registered SDK names (space-separated)
+.PHONY: platform-sdk-list-print
+platform-sdk-list-print:
+	@echo $(sort arm $(PLATFORM_SDKS))
+
+## platform-sdk-cache-paths-print : print cache paths for SDK specified by SDK= variable
+.PHONY: platform-sdk-cache-paths-print
+platform-sdk-cache-paths-print:
+ifneq ($(PLATFORM_SDK_$(SDK)_SUBMODULE),)
+	@echo "$(PLATFORM_SDK_$(SDK)_SUBMODULE)"
+	@echo ".git/modules/$(PLATFORM_SDK_$(SDK)_SUBMODULE)"
+else
+	@echo "tools"
+endif
+
+## platform-sdk-cache-key-print : print cache key for SDK specified by SDK= variable
+# The path component is included so relocating a submodule (e.g. lib/main → lib/modules)
+# busts the cache; otherwise the gitlink SHA is unchanged across a path move and a stale
+# cache from the old path would be restored over the new one.
+.PHONY: platform-sdk-cache-key-print
+platform-sdk-cache-key-print:
+ifneq ($(PLATFORM_SDK_$(SDK)_SUBMODULE),)
+	@echo $(subst /,-,$(PLATFORM_SDK_$(SDK)_SUBMODULE))-$(shell git rev-parse HEAD:$(PLATFORM_SDK_$(SDK)_SUBMODULE) 2>/dev/null)
+else
+	@echo "base"
+endif
+
+## platform-sdk-hydrate : hydrate SDK specified by SDK= variable, or all SDKs if SDK is unset
+.PHONY: platform-sdk-hydrate
+platform-sdk-hydrate:
+ifneq ($(PLATFORM_SDK_$(SDK)_HYDRATE),)
+	$(V1) $(MAKE) $(PLATFORM_SDK_$(SDK)_HYDRATE)
+else ifdef SDK
+	@true
+else
+	$(V1) $(MAKE) $(foreach s,$(PLATFORM_SDKS),$(PLATFORM_SDK_$(s)_HYDRATE))
+endif
+
+## platform-tools-install : install tools for SDK specified by SDK= variable, or all if unset
+.PHONY: platform-tools-install
+platform-tools-install:
+ifdef SDK
+	$(V1) $(if $(PLATFORM_SDK_$(SDK)_TOOLS),$(MAKE) $(PLATFORM_SDK_$(SDK)_TOOLS),@true)
+else
+	$(V1) $(MAKE) $(sort $(PLATFORM_SDK_arm_TOOLS) $(foreach s,$(PLATFORM_SDKS),$(PLATFORM_SDK_$(s)_TOOLS)))
+endif
+
+## target-sdk-print : print the SDK name for the current TARGET or CONFIG ('arm' if no platform SDK)
+.PHONY: target-sdk-print
+target-sdk-print:
+	@echo $(PLATFORM_SDK)
+
+## build-sdk-print : print the SDK name for BUILD= (auto-detects TARGET vs CONFIG)
+.PHONY: build-sdk-print
+build-sdk-print:
+ifdef BUILD
+	$(V1) if [ -d "$(PLATFORM_DIR)/*/target/$(BUILD)" ] 2>/dev/null || \
+	      ls $(PLATFORM_DIR)/*/target/$(BUILD)/target.mk >/dev/null 2>&1; then \
+		$(MAKE) -s TARGET=$(BUILD) target-sdk-print; \
+	else \
+		$(MAKE) -s CONFIG=$(BUILD) target-sdk-print; \
+	fi
+else
+	$(error BUILD= variable required)
+endif

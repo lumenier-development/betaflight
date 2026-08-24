@@ -53,6 +53,7 @@ extern "C" {
     #include "pg/pg_ids.h"
     #include "pg/beeper.h"
     #include "pg/gps.h"
+    #include "pg/pilot.h"
     #include "pg/rx.h"
     #include "rx/rx.h"
     #include "scheduler/scheduler.h"
@@ -60,9 +61,10 @@ extern "C" {
     #include "sensors/gyro.h"
 
     void cliSet(const char *cmdName, char *cmdline);
+    void cliHelp(const char *cmdName, char *cmdline);
     int cliGetSettingIndex(char *name, uint8_t length);
     void *cliGetValuePointer(const clivalue_t *value);
-    
+
     const clivalue_t valueTable[] = {
         { .name = "array_unit_test",   .type = VAR_INT8  | MODE_ARRAY  | MASTER_VALUE, .config = { .array = { .length = 3}},                     .pgn = PG_RESERVED_FOR_TESTING_1, .offset = 0 },
         { .name = "str_unit_test",     .type = VAR_UINT8 | MODE_STRING | MASTER_VALUE, .config = { .string = { 0, 16, 0 }},                      .pgn = PG_RESERVED_FOR_TESTING_1, .offset = 0 },
@@ -74,6 +76,7 @@ extern "C" {
     const char * const buildKey = NULL;
     const char * const releaseName = NULL;
 
+    gyro_t gyro;
 
     PG_REGISTER(osdConfig_t, osdConfig, PG_OSD_CONFIG, 0);
     PG_REGISTER(batteryConfig_t, batteryConfig, PG_BATTERY_CONFIG, 0);
@@ -105,6 +108,8 @@ extern "C" {
 
 const bool PRINT_TEST_DATA = false;
 
+// Verifies that cliSet correctly parses and stores an array-type setting
+// with mixed positive and negative integer values.
 TEST(CLIUnittest, TestCliSetArray)
 {
     char *str = (char *)"array_unit_test    =   123,  -3  , 1";
@@ -129,9 +134,11 @@ TEST(CLIUnittest, TestCliSetArray)
     EXPECT_EQ(  1, data[2]);
 }
 
+// Verifies that cliSet correctly writes a string value into a string-type setting
+// without any special flags (e.g. write-once protection).
 TEST(CLIUnittest, TestCliSetStringNoFlags)
 {
-    char *str = (char *)"str_unit_test    =   SAMPLE"; 
+    char *str = (char *)"str_unit_test    =   SAMPLE";
     cliSet("", str);
 
     const uint16_t index = cliGetSettingIndex(str, 13);
@@ -157,10 +164,12 @@ TEST(CLIUnittest, TestCliSetStringNoFlags)
     EXPECT_EQ(0,   data[6]);
 }
 
+// Verifies that a write-once string setting ignores subsequent writes after
+// the initial value is set, preserving the original value on re-assignment.
 TEST(CLIUnittest, TestCliSetStringWriteOnce)
 {
-    char *str1 = (char *)"wos_unit_test    =   SAMPLE"; 
-    char *str2 = (char *)"wos_unit_test    =   ELPMAS"; 
+    char *str1 = (char *)"wos_unit_test    =   SAMPLE";
+    char *str2 = (char *)"wos_unit_test    =   ELPMAS";
     cliSet("", str1);
 
     const uint16_t index = cliGetSettingIndex(str1, 13);
@@ -319,6 +328,8 @@ uint32_t millis(void) { return 0; }
 uint8_t getBatteryCellCount(void) { return 1; }
 void servoMixerLoadMix(int) {}
 const char * getBatteryStateString(void){ return "_getBatteryStateString_"; }
+uint32_t getCycleCounter(void) { return 0; }
+uint32_t clockMicrosToCycles(uint32_t micros) { return micros; }
 
 uint32_t stackTotalSize(void) { return 0x4000; }
 uint32_t stackHighMem(void) { return 0x80000000; }
@@ -339,9 +350,10 @@ void getTaskInfo(taskId_e, taskInfo_t *) {}
 void getCheckFuncInfo(cfCheckFuncInfo_t *) {}
 void schedulerResetTaskMaxExecutionTime(taskId_e) {}
 void schedulerResetCheckFunctionMaxExecutionTime(void) {}
+void schedulerIgnoreTaskExecTime(void) {}
 
 const char * const targetName = "UNITTEST";
-const char* const buildDate = "Jan 01 2017";
+const char * const buildDate = "Jan 01 2017";
 const char * const buildTime = "00:00:00";
 const char * const shortGitRevision = "MASTER";
 
@@ -360,6 +372,8 @@ void systemReset(void) {}
 void writeUnmodifiedConfigToEEPROM(void) {}
 
 void changePidProfile(uint8_t) {}
+void changeBatteryProfile(uint8_t) {}
+uint8_t getCurrentBatteryProfileIndex(void) { return 0; }
 bool serialIsPortAvailable(serialPortIdentifier_e) { return false; }
 void generateLedConfig(ledConfig_t *, char *, size_t) {}
 //bool isSerialTransmitBufferEmpty(const serialPort_t *) {return true; }
@@ -368,6 +382,19 @@ void generateLedConfig(ledConfig_t *, char *, size_t) {}
 //void serialSetCtrlLineStateCb(serialPort_t *, void (*)(void *, uint16_t ), void *) {}
 void serialSetCtrlLineStateDtrPin(serialPort_t *, ioTag_t ) {}
 void serialSetCtrlLineState(serialPort_t *, uint16_t ) {}
+
+serialPortIdentifier_e findSerialPortByName(const char* portName, int (*cmp)(const char *portName, const char *candidate))
+{
+    UNUSED(portName);
+    UNUSED(cmp);
+    return SERIAL_PORT_NONE;
+}
+
+const char* serialName(serialPortIdentifier_e identifier, const char* notFound)
+{
+    UNUSED(identifier);
+    return notFound;
+}
 
 //void serialSetBaudRateCb(serialPort_t *, void (*)(serialPort_t *context, uint32_t baud), serialPort_t *) {}
 void rescheduleTask(taskId_e, timeDelta_t){}
@@ -380,13 +407,249 @@ bool setBoardName(char *newBoardName) { UNUSED(newBoardName); return true; };
 bool setManufacturerId(char *newManufacturerId) { UNUSED(newManufacturerId); return true; };
 bool persistBoardInformation(void) { return true; };
 
+const char * const *sensorHardwareNames(sensorIndex_e, int *count) { if (count) *count = 0; return NULL; }
+sensorIndex_e sensorIndexFromName(const char *) { return SENSOR_INDEX_COUNT; }
+const char *sensorTypeName(sensorIndex_e) { return NULL; }
+
 void activeAdjustmentRangeReset(void) {}
 void analyzeModeActivationConditions(void) {}
 bool isModeActivationConditionConfigured(const modeActivationCondition_t *, const modeActivationCondition_t *) { return false; }
 
 void delay(uint32_t) {}
 displayPort_t *osdGetDisplayPort(osdDisplayPortDevice_e *) { return NULL; }
-mcuTypeId_e getMcuTypeId(void) { return MCU_TYPE_UNKNOWN; }
-uint16_t getCurrentRxIntervalUs(void) { return 0; }
+const char *getMcuTypeName(void) { return targetName; }
+float getCurrentRxRateHz(void) { return 0; }
 uint16_t getAverageSystemLoadPercent(void) { return 0; }
+bool getRxRateValid(void) { return false; }
+const uint16_t *getBuildOptions(unsigned *count) { *count = 0; return NULL; }
+}
+
+// Verifies cliGetSettingByName returns "name = value" for an array setting.
+TEST(CLIUnittest, TestGetSettingByNameArray)
+{
+    // First set the array to known values
+    char *str = (char *)"array_unit_test = 10,-20,30";
+    cliSet("", str);
+
+    char buf[128];
+    memset(buf, 0, sizeof(buf));
+    int written = cliGetSettingByName("array_unit_test", buf, sizeof(buf));
+
+    EXPECT_GT(written, 0);
+    ASSERT_LT((size_t)written, sizeof(buf));
+    buf[written] = '\0';
+    EXPECT_STREQ("array_unit_test = 10,-20,30", buf);
+}
+
+// Verifies cliGetSettingByName returns "name = value" for a string setting.
+TEST(CLIUnittest, TestGetSettingByNameString)
+{
+    char *str = (char *)"str_unit_test = HELLO";
+    cliSet("", str);
+
+    char buf[128];
+    memset(buf, 0, sizeof(buf));
+    int written = cliGetSettingByName("str_unit_test", buf, sizeof(buf));
+
+    EXPECT_GT(written, 0);
+    ASSERT_LT((size_t)written, sizeof(buf));
+    buf[written] = '\0';
+    EXPECT_STREQ("str_unit_test = HELLO", buf);
+}
+
+// Verifies cliGetSettingByName returns -1 for a nonexistent setting.
+TEST(CLIUnittest, TestGetSettingByNameNotFound)
+{
+    char buf[128];
+    int written = cliGetSettingByName("nonexistent_setting", buf, sizeof(buf));
+    EXPECT_EQ(-1, written);
+}
+
+// Verifies cliGetSettingByName truncates output when buffer is small.
+TEST(CLIUnittest, TestGetSettingByNameSmallBuffer)
+{
+    char *str = (char *)"array_unit_test = 1,2,3";
+    cliSet("", str);
+
+    char buf[10];
+    memset(buf, 0, sizeof(buf));
+    int written = cliGetSettingByName("array_unit_test", buf, sizeof(buf));
+
+    EXPECT_LT(written, 0); // truncated output must return error
+}
+
+// Verifies cliGetSettingByName returns 0 when buffer length is zero.
+TEST(CLIUnittest, TestGetSettingByNameZeroBuffer)
+{
+    char buf[1];
+    int written = cliGetSettingByName("array_unit_test", buf, 0);
+    EXPECT_EQ(0, written);
+}
+
+// Verifies cliSetSettingByName sets an array value and round-trips via get.
+TEST(CLIUnittest, TestSetSettingByNameArray)
+{
+    bool result = cliSetSettingByName("array_unit_test = 50,-60,70");
+    EXPECT_TRUE(result);
+
+    // Verify the values were stored
+    const uint16_t index = cliGetSettingIndex((char *)"array_unit_test", 15);
+    EXPECT_LT(index, valueTableEntryCount);
+    int8_t *data = (int8_t *)cliGetValuePointer(&valueTable[index]);
+    EXPECT_EQ(50,  data[0]);
+    EXPECT_EQ(-60, data[1]);
+    EXPECT_EQ(70,  data[2]);
+}
+
+// Verifies cliSetSettingByName sets a string value.
+TEST(CLIUnittest, TestSetSettingByNameString)
+{
+    bool result = cliSetSettingByName("str_unit_test = WORLD");
+    EXPECT_TRUE(result);
+
+    char buf[128];
+    memset(buf, 0, sizeof(buf));
+    int written = cliGetSettingByName("str_unit_test", buf, sizeof(buf));
+    EXPECT_GT(written, 0);
+    ASSERT_LT((size_t)written, sizeof(buf));
+    buf[written] = '\0';
+    EXPECT_STREQ("str_unit_test = WORLD", buf);
+}
+
+// Verifies cliSetSettingByName returns false for missing equals sign.
+TEST(CLIUnittest, TestSetSettingByNameNoEquals)
+{
+    bool result = cliSetSettingByName("array_unit_test 1,2,3");
+    EXPECT_FALSE(result);
+}
+
+// Verifies cliSetSettingByName returns false for nonexistent setting.
+TEST(CLIUnittest, TestSetSettingByNameNotFound)
+{
+    bool result = cliSetSettingByName("nonexistent_setting = 42");
+    EXPECT_FALSE(result);
+}
+
+// Verifies cliSetSettingByName rejects a partial array (fewer elements than length).
+TEST(CLIUnittest, TestSetSettingByNamePartialArray)
+{
+    // First set to known values
+    cliSetSettingByName("array_unit_test = 10,20,30");
+
+    // Attempt partial update with only 1 of 3 elements
+    bool result = cliSetSettingByName("array_unit_test = 99");
+    EXPECT_FALSE(result);
+
+    // Original values should be unchanged
+    const uint16_t index = cliGetSettingIndex((char *)"array_unit_test", 15);
+    EXPECT_LT(index, valueTableEntryCount);
+    int8_t *data = (int8_t *)cliGetValuePointer(&valueTable[index]);
+    EXPECT_EQ(10, data[0]);
+    EXPECT_EQ(20, data[1]);
+    EXPECT_EQ(30, data[2]);
+}
+
+// Verifies cliSetSettingByName returns false when value is empty.
+TEST(CLIUnittest, TestSetSettingByNameEmptyValue)
+{
+    bool result = cliSetSettingByName("array_unit_test = ");
+    EXPECT_FALSE(result);
+}
+
+// Verifies cliSetSettingByName handles extra whitespace around '='.
+TEST(CLIUnittest, TestSetSettingByNameWhitespace)
+{
+    bool result = cliSetSettingByName("array_unit_test   =   7, -8 , 9");
+    EXPECT_TRUE(result);
+
+    const uint16_t index = cliGetSettingIndex((char *)"array_unit_test", 15);
+    EXPECT_LT(index, valueTableEntryCount);
+    int8_t *data = (int8_t *)cliGetValuePointer(&valueTable[index]);
+    EXPECT_EQ(7,  data[0]);
+    EXPECT_EQ(-8, data[1]);
+    EXPECT_EQ(9,  data[2]);
+}
+
+// Verifies cliGetSettingInfoByName returns metadata for an array setting.
+TEST(CLIUnittest, TestGetSettingInfoByNameArray)
+{
+    char buf[512];
+    memset(buf, 0, sizeof(buf));
+    int totalLen = 0;
+
+    int written = cliGetSettingInfoByName("array_unit_test", 0, buf, sizeof(buf), &totalLen);
+
+    EXPECT_GT(written, 0);
+    EXPECT_GT(totalLen, 0);
+    ASSERT_LT((size_t)written, sizeof(buf));
+    buf[written] = '\0';
+
+    // Should contain PGN, type, and length info
+    EXPECT_TRUE(strstr(buf, "pgn=") != NULL);
+    EXPECT_TRUE(strstr(buf, "type=int8[]") != NULL);
+    EXPECT_TRUE(strstr(buf, "length=3") != NULL);
+    EXPECT_TRUE(strstr(buf, "default=") != NULL);
+}
+
+// Verifies cliGetSettingInfoByName returns metadata for a string setting.
+TEST(CLIUnittest, TestGetSettingInfoByNameString)
+{
+    char buf[512];
+    memset(buf, 0, sizeof(buf));
+    int totalLen = 0;
+
+    int written = cliGetSettingInfoByName("str_unit_test", 0, buf, sizeof(buf), &totalLen);
+
+    EXPECT_GT(written, 0);
+    ASSERT_LT((size_t)written, sizeof(buf));
+    buf[written] = '\0';
+
+    EXPECT_TRUE(strstr(buf, "type=string") != NULL);
+    EXPECT_TRUE(strstr(buf, "maxlength=16") != NULL);
+}
+
+// Verifies cliGetSettingInfoByName returns -1 for nonexistent setting.
+TEST(CLIUnittest, TestGetSettingInfoByNameNotFound)
+{
+    char buf[128];
+    int totalLen = 0;
+    int written = cliGetSettingInfoByName("nonexistent_setting", 0, buf, sizeof(buf), &totalLen);
+    EXPECT_EQ(-1, written);
+}
+
+// Verifies the windowed offset feature of cliGetSettingInfoByName.
+TEST(CLIUnittest, TestGetSettingInfoByNameOffset)
+{
+    char fullBuf[512];
+    memset(fullBuf, 0, sizeof(fullBuf));
+    int totalLen = 0;
+    int fullWritten = cliGetSettingInfoByName("array_unit_test", 0, fullBuf, sizeof(fullBuf), &totalLen);
+    EXPECT_GT(fullWritten, 0);
+
+    // Read with an offset of 5 bytes
+    char offsetBuf[512];
+    memset(offsetBuf, 0, sizeof(offsetBuf));
+    int totalLen2 = 0;
+    int offsetWritten = cliGetSettingInfoByName("array_unit_test", 5, offsetBuf, sizeof(offsetBuf), &totalLen2);
+    EXPECT_GT(offsetWritten, 0);
+    EXPECT_EQ(totalLen, totalLen2); // total size should be the same regardless of offset
+
+    // The offset buffer should match the full buffer starting at position 5
+    ASSERT_GE(offsetWritten, 0);
+    ASSERT_LE(5 + offsetWritten, fullWritten);
+    EXPECT_EQ(0, memcmp(fullBuf + 5, offsetBuf, offsetWritten));
+}
+
+// Verifies that cliHelp does not dereference NULL when searching commands whose
+// description field is NULL (e.g. flash_read, flash_write, play_sound).
+// Prior to the fix, strcasestr(NULL, cmdline) was called for these entries,
+// which is undefined behaviour and causes a SIGSEGV on hosted targets.
+TEST(CLIUnittest, TestCliHelpNullDescription)
+{
+    // "address" appears in the *args* of flash_read/flash_write but not in their names,
+    // and their descriptions are NULL — this is the exact case that triggered the UB.
+    cliHelp("help", (char *)"address");
+
+    // If we reach here without a crash/SIGSEGV the null guard is working.
+    SUCCEED();
 }

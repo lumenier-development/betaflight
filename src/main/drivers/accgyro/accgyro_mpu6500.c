@@ -24,6 +24,11 @@
 
 #include "platform.h"
 
+#if defined(USE_ACC_SPI_MPU6500) \
+    || defined(USE_GYRO_SPI_MPU6500) \
+    || defined(USE_ACC_MPU6500) \
+    || defined(USE_GYRO_MPU6500)
+
 #include "common/axis.h"
 #include "common/maths.h"
 
@@ -93,6 +98,9 @@ void mpu6500GyroInit(gyroDev_t *gyro)
 
     busWriteRegister(&gyro->dev, MPU_RA_INT_ENABLE, MPU6500_BIT_RAW_RDY_EN); // RAW_RDY_EN interrupt enable
     delay(15);
+
+    gyro->tempScale = 1.0f / 340.0f;
+    gyro->tempZero = 36.53f;
 }
 
 bool mpu6500GyroDetect(gyroDev_t *gyro)
@@ -108,3 +116,5 @@ bool mpu6500GyroDetect(gyroDev_t *gyro)
 
     return true;
 }
+
+#endif // USE_ACC_SPI_MPU6500 || USE_GYRO_SPI_MPU6500 || USE_ACC_MPU6500 || USE_GYRO_MPU6500

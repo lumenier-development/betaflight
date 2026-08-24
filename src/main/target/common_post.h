@@ -39,44 +39,84 @@
 
 */
 
+#ifndef PLATFORM_NO_LIBC
+#define PLATFORM_NO_LIBC 1
+#endif
+
 #if (__FPU_PRESENT == 1) && (__FPU_USED == 1)
 #define DEFAULT_AUX_CHANNEL_COUNT       MAX_AUX_CHANNEL_COUNT
 #else
 #define DEFAULT_AUX_CHANNEL_COUNT       6
 #endif
 
-#ifdef USE_ITCM_RAM
-#if defined(ITCM_RAM_OPTIMISATION) && !defined(DEBUG)
-#define FAST_CODE                   __attribute__((section(".tcm_code"))) __attribute__((optimize(ITCM_RAM_OPTIMISATION)))
-#else
-#define FAST_CODE                   __attribute__((section(".tcm_code")))
-#endif
-// Handle case where we'd prefer code to be in ITCM, but it won't fit on the device
-#ifndef FAST_CODE_PREF
-#define FAST_CODE_PREF              FAST_CODE
-#endif
-
-#define FAST_CODE_NOINLINE          NOINLINE
-
-#else
+#ifndef FAST_CODE
 #define FAST_CODE
-#define FAST_CODE_PREF
-#define FAST_CODE_NOINLINE
-#endif // USE_ITCM_RAM
+#endif
 
-#ifdef USE_CCM_CODE
-#define CCM_CODE                    __attribute__((section(".ccm_code")))
-#else
+#ifndef FAST_CODE_PREF
+#define FAST_CODE_PREF  FAST_CODE
+#endif
+
+#ifndef FAST_CODE_NOINLINE
+#define FAST_CODE_NOINLINE
+#endif
+
+#ifndef CCM_CODE
 #define CCM_CODE
 #endif
 
-#ifdef USE_FAST_DATA
-#define FAST_DATA_ZERO_INIT         __attribute__ ((section(".fastram_bss"), aligned(4)))
-#define FAST_DATA                   __attribute__ ((section(".fastram_data"), aligned(4)))
-#else
-#define FAST_DATA_ZERO_INIT
+#ifndef FAST_DATA
 #define FAST_DATA
-#endif // USE_FAST_DATA
+#endif
+
+#ifndef FAST_DATA_ZERO_INIT
+#define FAST_DATA_ZERO_INIT
+#endif
+
+/*
+ * Active MMFLASH_* assignments — moved here from platform/platform.h
+ * because target.h is included between platform.h and common_post.h, so
+ * USE_FLASH_MEMORY_MAPPED set in target.h was invisible to platform.h's
+ * conditional. Now that target.h has been processed, USE_FLASH_MEMORY_MAPPED
+ * is reliably visible. Without this, the XSPI driver's
+ * MMFLASH_CODE_NOINLINE annotations on octoSpiDisableMemoryMappedMode /
+ * octoSpiEnableMemoryMappedMode / xspiTestEnableDisableMemoryMappedMode
+ * silently expand to nothing — those functions land in XIP .text and die
+ * the moment they disable memory-mapped mode mid-execution (next
+ * instruction fetch from disabled XSPI hangs the chip silently).
+ */
+#if defined(USE_FLASH_MEMORY_MAPPED)
+#if !defined(USE_RAM_CODE)
+#define USE_RAM_CODE
+#endif
+#if !defined(RAM_CODE)
+#define RAM_CODE                   __attribute__((section(".ram_code")))
+#endif
+#define MMFLASH_CODE               RAM_CODE
+#define MMFLASH_CODE_NOINLINE      RAM_CODE NOINLINE
+#define MMFLASH_DATA               FAST_DATA
+#define MMFLASH_DATA_ZERO_INIT     FAST_DATA_ZERO_INIT
+#endif
+
+#ifndef RAM_CODE
+#define RAM_CODE
+#endif
+
+#ifndef MMFLASH_CODE
+#define MMFLASH_CODE
+#endif
+
+#ifndef MMFLASH_CODE_NOINLINE
+#define MMFLASH_CODE_NOINLINE
+#endif
+
+#ifndef MMFLASH_DATA
+#define MMFLASH_DATA
+#endif
+
+#ifndef MMFLASH_DATA_ZERO_INIT
+#define MMFLASH_DATA_ZERO_INIT
+#endif
 
 /*
     BEGIN HARDWARE INCLUSIONS
@@ -84,6 +124,64 @@
     Simplified options for the moment, i.e. adding USE_MAG or USE_BARO and the entire driver suite is added.
     In the future we can move to specific drivers being added only - to save flash space.
 */
+
+// normalize serial ports definitions
+#include "serial_post.h"
+
+#if defined(USE_ACC) \
+    && !defined(USE_ACC_MPU6000) \
+    && !defined(USE_ACC_MPU6050) \
+    && !defined(USE_ACC_MPU6500) \
+    && !defined(USE_ACCGYRO_BMI160) \
+    && !defined(USE_ACCGYRO_BMI270) \
+    && !defined(USE_ACC_SPI_ICM20602) \
+    && !defined(USE_ACC_SPI_ICM20649) \
+    && !defined(USE_ACC_SPI_ICM20689) \
+    && !defined(USE_ACC_SPI_ICM42605) \
+    && !defined(USE_ACCGYRO_ICM40609D) \
+    && !defined(USE_ACCGYRO_ICM42622P) \
+    && !defined(USE_ACCGYRO_ICM42686P) \
+    && !defined(USE_ACC_SPI_ICM42688P) \
+    && !defined(USE_ACCGYRO_ICM45686) \
+    && !defined(USE_ACCGYRO_ICM45605) \
+    && !defined(USE_ACCGYRO_LSM6DSO) \
+    && !defined(USE_ACCGYRO_LSM6DSV16X) \
+    && !defined(USE_ACCGYRO_LSM6DSK320X) \
+    && !defined(USE_ACC_SPI_MPU6000) \
+    && !defined(USE_ACC_SPI_MPU6500) \
+    && !defined(USE_ACC_SPI_MPU9250) \
+    && !defined(USE_ACCGYRO_IIM42652) \
+    && !defined(USE_ACCGYRO_IIM42653) \
+    && !defined(USE_VIRTUAL_ACC)
+#error At least one USE_ACC device definition required
+#endif
+
+#if defined(USE_GYRO) \
+    && !defined(USE_GYRO_MPU6050) \
+    && !defined(USE_GYRO_MPU6500) \
+    && !defined(USE_ACCGYRO_BMI160) \
+    && !defined(USE_ACCGYRO_BMI270) \
+    && !defined(USE_GYRO_SPI_ICM20602) \
+    && !defined(USE_GYRO_SPI_ICM20649) \
+    && !defined(USE_GYRO_SPI_ICM20689) \
+    && !defined(USE_GYRO_SPI_ICM42605) \
+    && !defined(USE_ACCGYRO_ICM42622P) \
+    && !defined(USE_ACCGYRO_ICM42686P) \
+    && !defined(USE_GYRO_SPI_ICM42688P) \
+    && !defined(USE_ACCGYRO_ICM45686) \
+    && !defined(USE_ACCGYRO_ICM45605) \
+    && !defined(USE_ACCGYRO_ICM40609D) \
+    && !defined(USE_ACCGYRO_LSM6DSO) \
+    && !defined(USE_ACCGYRO_LSM6DSV16X) \
+    && !defined(USE_ACCGYRO_LSM6DSK320X) \
+    && !defined(USE_GYRO_SPI_MPU6000) \
+    && !defined(USE_GYRO_SPI_MPU6500) \
+    && !defined(USE_GYRO_SPI_MPU9250) \
+    && !defined(USE_ACCGYRO_IIM42652) \
+    && !defined(USE_ACCGYRO_IIM42653) \
+    && !defined(USE_VIRTUAL_GYRO)
+#error At least one USE_GYRO device definition required
+#endif
 
 #if defined(USE_MAG) && !defined(USE_VIRTUAL_MAG)
 
@@ -98,6 +196,14 @@
 #endif
 #ifndef USE_MAG_QMC5883
 #define USE_MAG_QMC5883
+#endif
+#ifdef USE_MAG_QMC5883
+#ifndef USE_MAG_QMC5883L
+#define USE_MAG_QMC5883L
+#endif
+#ifndef USE_MAG_QMC5883P
+#define USE_MAG_QMC5883P
+#endif
 #endif
 #ifndef USE_MAG_LIS2MDL
 #define USE_MAG_LIS2MDL
@@ -120,8 +226,42 @@
 #ifndef USE_MAG_IST8310
 #define USE_MAG_IST8310
 #endif
+#ifndef USE_MAG_MMC560X
+#define USE_MAG_MMC560X
+#endif
 
 #endif // END MAG HW defines
+
+#if defined(USE_RANGEFINDER)
+
+#ifndef USE_RANGEFINDER_HCSR04
+#define USE_RANGEFINDER_HCSR04
+#endif
+#ifndef USE_RANGEFINDER_TF
+#define USE_RANGEFINDER_TF
+#endif
+#ifndef USE_RANGEFINDER_MT
+#define USE_RANGEFINDER_MT
+#endif
+#ifndef USE_RANGEFINDER_NOOPLOOP
+#define USE_RANGEFINDER_NOOPLOOP
+#endif
+#ifndef USE_RANGEFINDER_UPT1
+#define USE_RANGEFINDER_UPT1
+#endif
+
+#endif // USE_RANGEFINDER
+
+#if defined(USE_OPTICALFLOW)
+
+#ifndef USE_OPTICALFLOW_MT
+#define USE_OPTICALFLOW_MT
+#endif
+#ifndef USE_OPTICALFLOW_UPT1
+#define USE_OPTICALFLOW_UPT1
+#endif
+
+#endif // USE_OPTICALFLOW
 
 #if defined(USE_RX_CC2500)
 
@@ -147,7 +287,7 @@
 
 #endif // defined(USE_RX_CC2500)
 
-#if defined(CAMERA_CONTROL_PIN) && defined(USE_VTX) && !defined(USE_CAMERA_CONTROL)
+#if defined(CAMERA_CONTROL_PIN) && defined(USE_OSD_SD) && !defined(USE_CAMERA_CONTROL)
 #define USE_CAMERA_CONTROL
 #endif
 
@@ -206,6 +346,7 @@
 #undef USE_SERIALRX_SUMH
 #undef USE_SERIALRX_XBUS
 #undef USE_SERIALRX_FPORT
+#undef USE_SERIALRX_MAVLINK
 #endif
 
 #if !defined(USE_TELEMETRY)
@@ -251,9 +392,10 @@
 #undef USE_TELEMETRY_CRSF
 #undef USE_CRSF_LINK_STATISTICS
 #undef USE_CRSF_V3
+#undef USE_CRSF_ACCGYRO_TELEMETRY
 #endif
 
-#if !defined(USE_RX_EXPRESSLRS) && !defined(USE_SERIALRX_CRSF)
+#if !defined(USE_RX_EXPRESSLRS) && !defined(USE_SERIALRX_CRSF) && !defined(USE_SERIALRX_MAVLINK)
 #undef USE_RX_RSSI_DBM
 #endif
 
@@ -267,6 +409,11 @@
 
 #if !defined(USE_TELEMETRY_CRSF)
 #undef USE_CRSF_V3
+#undef USE_CRSF_ACCGYRO_TELEMETRY
+#endif
+
+#if !defined(USE_CRSF_V3)
+#undef USE_CRSF_ACCGYRO_TELEMETRY
 #endif
 
 #if !defined(USE_SERIALRX_JETIEXBUS)
@@ -351,7 +498,7 @@
 #define USE_FLASH_W25M
 #endif
 
-#if defined(USE_FLASH_M25P16) || defined(USE_FLASH_W25M) || defined(USE_FLASH_W25N) || defined(USE_FLASH_W25Q128FV)
+#if defined(USE_FLASH_M25P16) || defined(USE_FLASH_W25M) || defined(USE_FLASH_W25N) || defined(USE_FLASH_W25Q128FV) || defined(USE_FLASH_MX66UW1G45G)
 #if !defined(USE_FLASH_CHIP)
 #define USE_FLASH_CHIP
 #endif
@@ -363,13 +510,13 @@
 #endif
 #endif
 
-#if defined(USE_QUADSPI) && (defined(USE_FLASH_W25Q128FV) || defined(USE_FLASH_W25N))
+#if defined(USE_QUADSPI) && (defined(USE_FLASH_W25Q128FV) || defined(USE_FLASH_W25N) || defined(USE_FLASH_MT29F))
 #if !defined(USE_FLASH_QUADSPI)
 #define USE_FLASH_QUADSPI
 #endif
 #endif
 
-#if defined(USE_OCTOSPI) && defined(USE_FLASH_W25Q128FV)
+#if defined(USE_OCTOSPI) && (defined(USE_FLASH_W25Q128FV) || defined(USE_FLASH_MX66UW1G45G))
 #if !defined(USE_FLASH_OCTOSPI)
 #define USE_FLASH_OCTOSPI
 #endif
@@ -419,29 +566,24 @@
 #define USE_GYRO_SPI_MPU6500
 #endif
 
-// Generate USE_SPI_GYRO or USE_I2C_GYRO
-#if defined(USE_GYRO_L3G4200D) || defined(USE_GYRO_MPU3050) || defined(USE_GYRO_MPU6000) || defined(USE_GYRO_MPU6050) || defined(USE_GYRO_MPU6500)
-#ifndef USE_I2C_GYRO
-#define USE_I2C_GYRO
-#endif
-#endif
-
+// Generate USE_SPI_GYRO
 #if defined(USE_GYRO_SPI_ICM20689) || defined(USE_GYRO_SPI_MPU6000) || defined(USE_GYRO_SPI_MPU6500) || defined(USE_GYRO_SPI_MPU9250) \
-    || defined(USE_GYRO_L3GD20) || defined(USE_GYRO_SPI_ICM42605) || defined(USE_GYRO_SPI_ICM42688P) || defined(USE_ACCGYRO_BMI160) \
-    || defined(USE_ACCGYRO_BMI270) || defined(USE_ACCGYRO_LSM6DSV16X) || defined(USE_ACCGYRO_LSM6DSO)
+    || defined(USE_GYRO_L3GD20) || defined(USE_ACCGYRO_BMI160) || defined(USE_ACCGYRO_BMI270) \
+    || defined(USE_GYRO_SPI_ICM42605) || defined(USE_ACCGYRO_ICM42622P) || defined(USE_ACCGYRO_ICM42686P) || defined(USE_GYRO_SPI_ICM42688P) \
+    || defined(USE_ACCGYRO_ICM40609D) || defined(USE_ACCGYRO_ICM45605) || defined(USE_ACCGYRO_ICM45686) \
+    || defined(USE_ACCGYRO_IIM42652) || defined(USE_ACCGYRO_IIM42653) \
+    || defined(USE_ACCGYRO_LSM6DSV16X) || defined(USE_ACCGYRO_LSM6DSO) || defined(USE_ACCGYRO_LSM6DSK320X)
 #ifndef USE_SPI_GYRO
 #define USE_SPI_GYRO
 #endif
 #endif
 
-#ifndef SIMULATOR_BUILD
 #ifndef USE_ACC
 #define USE_ACC
 #endif
 
 #ifndef USE_GYRO
 #define USE_GYRO
-#endif
 #endif
 
 // CX10 is a special case of SPI RX which requires XN297
@@ -455,14 +597,6 @@
 // Can be set at runtime with with CLI parameter 'system_hse_mhz'.
 #ifndef SYSTEM_HSE_MHZ
 #define SYSTEM_HSE_MHZ 0
-#endif
-
-// Number of pins that needs pre-init
-#ifdef USE_SPI
-#ifndef SPI_PREINIT_COUNT
-// 2 x 8 (GYROx2, BARO, MAG, MAX, FLASHx2, RX)
-#define SPI_PREINIT_COUNT 16
-#endif
 #endif
 
 #ifndef USE_BLACKBOX
@@ -481,7 +615,7 @@
 #endif
 #endif
 
-#if defined(USE_RX_PWM) || defined(USE_DSHOT) || defined(USE_LED_STRIP) || defined(USE_TRANSPONDER) || defined(USE_BEEPER) || defined(USE_SERIAL_4WAY_BLHELI_INTERFACE)
+#if defined(USE_RX_PWM) || defined(USE_DSHOT) || defined(USE_LED_STRIP) || defined(USE_TRANSPONDER) || defined(USE_BEEPER) || defined(USE_SERIAL_4WAY_BLHELI_INTERFACE) || defined(USE_GYRO_CLKIN)
 #ifndef USE_PWM_OUTPUT
 #define USE_PWM_OUTPUT
 #endif
@@ -501,7 +635,39 @@
 #define USE_WS2811_SINGLE_COLOUR
 #endif
 
-#if defined(SIMULATOR_BUILD) || defined(UNIT_TEST)
+#if !defined(ENABLE_SIMULATOR)
+#define ENABLE_SIMULATOR 0
+#endif
+
+#if ENABLE_SIMULATOR
+#if !defined(ENABLE_SIMULATOR_MULTITHREAD)
+#define ENABLE_SIMULATOR_MULTITHREAD 0
+#endif
+#if !defined(ENABLE_SIMULATOR_IMU_SYNC)
+#define ENABLE_SIMULATOR_IMU_SYNC 0
+#endif
+#if !defined(ENABLE_SIMULATOR_GYROPID_SYNC)
+#define ENABLE_SIMULATOR_GYROPID_SYNC 0
+#endif
+#else
+#if defined(ENABLE_SIMULATOR_MULTITHREAD)
+#warning ENABLE_SIMULATOR_MULTITHREAD defined without ENABLE_SIMULATOR
+#else
+#define ENABLE_SIMULATOR_MULTITHREAD 0
+#endif
+#if defined(ENABLE_SIMULATOR_IMU_SYNC)
+#warning ENABLE_SIMULATOR_IMU_SYNC defined without ENABLE_SIMULATOR
+#else
+#define ENABLE_SIMULATOR_IMU_SYNC 0
+#endif
+#if defined(ENABLE_SIMULATOR_GYROPID_SYNC)
+#warning ENABLE_SIMULATOR_GYROPID_SYNC defined without ENABLE_SIMULATOR
+#else
+#define ENABLE_SIMULATOR_GYROPID_SYNC 0
+#endif
+#endif
+
+#if ENABLE_SIMULATOR || defined(UNIT_TEST)
 // This feature uses 'arm_math.h', which does not exist for x86.
 #undef USE_DYN_NOTCH_FILTER
 #endif
@@ -549,19 +715,37 @@
 #undef USED_TIMERS
 #endif
 
-#if !defined(USE_RANGEFINDER)
-#undef USE_RANGEFINDER_HCSR04
-#undef USE_RANGEFINDER_SRF10
-#undef USE_RANGEFINDER_HCSR04_I2C
-#undef USE_RANGEFINDER_VL53L0X
-#undef USE_RANGEFINDER_UIB
-#undef USE_RANGEFINDER_TF
+// Hardware cross-deps: OF drivers need their rangefinder driver counterparts
+// (the optical flow code lives inside the rangefinder driver files)
+#if defined(USE_OPTICALFLOW_MT)
+#ifndef USE_RANGEFINDER_MT
+#define USE_RANGEFINDER_MT
 #endif
+#endif // USE_OPTICALFLOW_MT
+
+#if defined(USE_OPTICALFLOW_UPT1)
+#ifndef USE_RANGEFINDER_UPT1
+#define USE_RANGEFINDER_UPT1
+#endif
+#endif // USE_OPTICALFLOW_UPT1
+
+// Bottom-up: individual rangefinder drivers → USE_RANGEFINDER
+#if defined(USE_RANGEFINDER_HCSR04) || defined(USE_RANGEFINDER_TF) || defined(USE_RANGEFINDER_MT) || defined(USE_RANGEFINDER_NOOPLOOP) || defined(USE_RANGEFINDER_UPT1)
+#ifndef USE_RANGEFINDER
+#define USE_RANGEFINDER
+#endif
+#endif // USE_RANGEFINDER_XXX
+
+// Bottom-up: individual opticalflow drivers → USE_OPTICALFLOW
+#if defined(USE_OPTICALFLOW_MT) || defined(USE_OPTICALFLOW_UPT1)
+#ifndef USE_OPTICALFLOW
+#define USE_OPTICALFLOW
+#endif
+#endif // USE_OPTICALFLOW_XXX
 
 #ifndef USE_GPS_RESCUE
 #undef USE_CMS_GPS_RESCUE_MENU
 #endif
-
 
 #if defined(CONFIG_IN_RAM) || defined(CONFIG_IN_FILE) || defined(CONFIG_IN_EXTERNAL_FLASH) || defined(CONFIG_IN_SDCARD) || defined(CONFIG_IN_MEMORY_MAPPED_FLASH)
 #ifndef EEPROM_SIZE
@@ -574,39 +758,13 @@ extern uint8_t eepromData[EEPROM_SIZE];
 #ifndef CONFIG_IN_FLASH
 #define CONFIG_IN_FLASH
 #endif
-extern uint8_t __config_start;   // configured via linker script when building binaries.
-extern uint8_t __config_end;
+struct linker_symbol;
+extern struct linker_symbol __config_start;   // configured via linker script when building binaries.
+extern struct linker_symbol __config_end;
+#ifdef FONTDATA_IN_FLASH
+extern struct linker_symbol __fontdata_start; // configured via linker script when building binaries.
+extern struct linker_symbol __fontdata_end;
 #endif
-
-#if defined(USE_EXST) && !defined(RAMBASED)
-#define USE_FLASH_BOOT_LOADER
-#endif
-
-#if defined(USE_FLASH_MEMORY_MAPPED)
-#if !defined(USE_RAM_CODE)
-#define USE_RAM_CODE
-#endif
-
-#define MMFLASH_CODE RAM_CODE
-#define MMFLASH_CODE_NOINLINE RAM_CODE NOINLINE
-
-#define MMFLASH_DATA FAST_DATA
-#define MMFLASH_DATA_ZERO_INIT FAST_DATA_ZERO_INIT
-#else
-#define MMFLASH_CODE
-#define MMFLASH_CODE_NOINLINE
-#define MMFLASH_DATA
-#define MMFLASH_DATA_ZERO_INIT
-#endif
-
-#ifdef USE_RAM_CODE
-// RAM_CODE for methods that need to be in RAM, but don't need to be in the fastest type of memory.
-// Note: if code is marked as RAM_CODE it *MUST* be in RAM, there is no alternative unlike functions marked with FAST_CODE/CCM_CODE
-#define RAM_CODE                   __attribute__((section(".ram_code")))
-#endif
-
-#ifndef USE_ITERM_RELAX
-#undef USE_ABSOLUTE_CONTROL
 #endif
 
 #if defined(USE_RX_EXPRESSLRS)
@@ -651,3 +809,185 @@ extern uint8_t __config_end;
 #define USE_PIN_PULL_UP_DOWN
 #endif
 #endif // USE_PINIO
+
+// GPS secondary defines - here (not common_pre.h) because SITL defines
+// USE_GPS in target.h which is included after common_pre.h. USE_GPS_RESCUE
+// additionally requires USE_ACC to match the earlier "!USE_ACC undef"
+// invariant; re-apply USE_CMS_GPS_RESCUE_MENU gating afterwards.
+#ifdef USE_GPS
+#if !defined(USE_GPS_NMEA)
+#define USE_GPS_NMEA
+#endif
+#if !defined(USE_GPS_UBLOX)
+#define USE_GPS_UBLOX
+#endif
+#if !defined(USE_GPS_RESCUE) && defined(USE_ACC)
+#define USE_GPS_RESCUE
+#endif
+#endif // USE_GPS
+
+#if (!defined(USE_GPS_RESCUE) || !defined(USE_CMS_FAILSAFE_MENU))
+#undef USE_CMS_GPS_RESCUE_MENU
+#endif
+
+/*****************************************************
+
+ Place any ENABLE_X_FEATURE=0 definitions here for those
+ yet to be defined, and also for any backward compatibility
+ with USE_ flags.
+
+ e.g.
+
+ #if !defined(ENABLE_X_FEATURE) && defined(USE_X_FEATURE)
+ #define ENABLE_X_FEATURE 1
+ #elif !defined(ENABLE_X_FEATURE)
+ #define ENABLE_X_FEATURE 0
+ #endif
+
+******************************************************/
+
+#if !defined(ENABLE_SERIAL_SKIP_CHECK_TX)
+#define ENABLE_SERIAL_SKIP_CHECK_TX 0
+#endif
+
+#if !defined(ENABLE_SDIO_INIT)
+#define ENABLE_SDIO_INIT 0
+#endif
+
+#if !defined(ENABLE_SDIO_PIN_CONFIG)
+#define ENABLE_SDIO_PIN_CONFIG 0
+#endif
+
+#if !defined(ENABLE_SDIO_EXTERNAL_DMA)
+#define ENABLE_SDIO_EXTERNAL_DMA 0
+#endif
+
+// STM32C5: drive boot source from the BOOT0 pin rather than the BOOT0
+// option bit. Default on so a BF crash never strands the board without
+// DFU recovery — set this to 0 in config.h for boards that wire BOOT0
+// to VDD/float, where forcing BOOT_SEL=1 would land in DFU on every boot.
+#if !defined(ENABLE_BOOT0_PIN_SELECT)
+#define ENABLE_BOOT0_PIN_SELECT 1
+#endif
+
+#if defined(USE_FLIGHT_PLAN) && !defined(ENABLE_FLIGHT_PLAN)
+#define ENABLE_FLIGHT_PLAN 1
+#elif !defined(ENABLE_FLIGHT_PLAN)
+#define ENABLE_FLIGHT_PLAN 0
+#endif
+
+// GPS rescue (both the BOXGPSRESCUE switch and the failsafe procedure) flown as
+// a synthesised flight-plan mission through the unified autopilot, instead of
+// the legacy gps_rescue controller. Default-on wherever the flight-plan engine
+// is available; targets without it (or wing, or flash-constrained) fall back to
+// the legacy rescue controller.
+#if !defined(ENABLE_RESCUE_PLAN)
+#if ENABLE_FLIGHT_PLAN && defined(USE_GPS_RESCUE) && !defined(USE_WING)
+#define ENABLE_RESCUE_PLAN 1
+#else
+#define ENABLE_RESCUE_PLAN 0
+#endif
+#endif
+#if ENABLE_RESCUE_PLAN && !(ENABLE_FLIGHT_PLAN && defined(USE_GPS_RESCUE) && !defined(USE_WING))
+#error "ENABLE_RESCUE_PLAN requires ENABLE_FLIGHT_PLAN, USE_GPS_RESCUE and !USE_WING"
+#endif
+
+// Flight-plan OSD minimap: draws the stored mission, home and the flown trail
+// as a character-cell map. Follows the flight-plan executor's multirotor-only
+// gate and additionally needs an OSD and GPS. Derived here so every consumer
+// (pg, osd, cli, core) shares one gate.
+#if ENABLE_FLIGHT_PLAN && !defined(USE_WING) && defined(USE_OSD) && defined(USE_GPS)
+#define USE_OSD_NAV_MAP
+#endif
+
+#if defined(USE_POSITION_HOLD) && !(defined(USE_GPS) || defined(USE_OPTICALFLOW))
+#error "USE_POSITION_HOLD requires USE_GPS and/or USE_OPTICALFLOW to be defined"
+#endif
+
+#if !defined(ENABLE_TELEMETRY_MAVLINK_MISSION)
+// flight_plan_nav.c (and the autopilot hook in fc/core.c) are gated on
+// !defined(USE_WING); the mission module reaches into those symbols, so match
+// the same shape here to keep wing builds linkable when USE_FLIGHT_PLAN lands.
+#if defined(USE_TELEMETRY_MAVLINK) && ENABLE_FLIGHT_PLAN && !defined(USE_WING)
+#define ENABLE_TELEMETRY_MAVLINK_MISSION 1
+#else
+#define ENABLE_TELEMETRY_MAVLINK_MISSION 0
+#endif
+#endif
+
+#if !defined(ENABLE_RX_UDP)
+#define ENABLE_RX_UDP 0
+#endif
+
+#if !defined(ENABLE_CAN)
+#define ENABLE_CAN 0
+#endif
+
+// DroneCAN piggy-backs on the same hardware gate as the raw CAN driver: the
+// stack is meaningless without a CAN peripheral to drive. Platforms that
+// compile CAN in also compile DroneCAN in by default, with the runtime PG
+// flag (dronecan_enabled) deciding whether the task is actually started.
+#if !defined(ENABLE_DRONECAN)
+#define ENABLE_DRONECAN ENABLE_CAN
+#endif
+
+// DroneCAN ESC: command ESCs over CAN (uavcan.equipment.esc.RawCommand) and
+// ingest their telemetry (uavcan.equipment.esc.Status). Built in wherever the
+// DroneCAN stack is, gated at runtime by selecting the DRONECAN motor protocol.
+#if !defined(ENABLE_DRONECAN_ESC)
+#define ENABLE_DRONECAN_ESC ENABLE_DRONECAN
+#endif
+
+// DroneCAN dynamic node-ID allocation: the FC acts as the centralised allocator,
+// handing node IDs to unconfigured peers (e.g. ESCs). Runtime PG flag
+// (dronecan_dna_enabled) decides whether the allocator actually runs.
+#if !defined(ENABLE_DRONECAN_DNA)
+#define ENABLE_DRONECAN_DNA ENABLE_DRONECAN
+#endif
+
+// First-cut probe for SPA06-003 (Goertek) over STM32C5 I3C1 in legacy-I2C
+// mode. When set, the probe runs once after baroInit() to confirm I3C bring-up
+// on PC10/PC11 by reading the SPA06 CHIP_ID (reg 0x0D) at address 0x77/0x76.
+// Result lives in `spa06ProbeChipId` / `spa06ProbeStatus` (SWD-readable). Off
+// by default; opt in from the board config.
+#if !defined(ENABLE_BARO_SPA06_PROBE)
+#define ENABLE_BARO_SPA06_PROBE 0
+#endif
+
+// LCD console — runtime debug terminal that scrolls printf/trace output to
+// an attached LCD. Independent of the OSD/displayPort stack. Off by default;
+// configs opt in by setting ENABLE_LCD_CONSOLE 1 plus a panel selector
+// (LCD_CONSOLE_PANEL_STUB / _LTDC / _SSD1306_I2C / _ST7789_SPI / ...).
+// ENABLE_LCD_PRINTF_REDIRECT routes the global tfp_printf sink to the LCD
+// at boot; turn it off to keep the LCD reachable only via lcdConsolePrintf().
+#if !defined(ENABLE_LCD_CONSOLE)
+#define ENABLE_LCD_CONSOLE 0
+#endif
+#if !defined(ENABLE_LCD_PRINTF_REDIRECT)
+#define ENABLE_LCD_PRINTF_REDIRECT ENABLE_LCD_CONSOLE
+#endif
+
+// Bench debug CLI primitives `dxr` (read) and `dxw` (write) for poking
+// arbitrary 32-bit memory addresses from a connected terminal. Off by
+// default; configs opt in for hardware bring-up by setting
+// ENABLE_DEBUG_CLI_COMMANDS 1.
+#if !defined(ENABLE_DEBUG_CLI_COMMANDS)
+#define ENABLE_DEBUG_CLI_COMMANDS 0
+#endif
+
+// Open Bootloader contract — defaulted off; N6 target.h opts in.
+// Defines BF_OBL_IWDG_REFRESH used to keep OBL's IWDG happy.
+#if !defined(ENABLE_BF_OBL)
+#define ENABLE_BF_OBL 0
+#endif
+
+#if ENABLE_BF_OBL
+#include "platform/bf_obl_contract.h"
+#endif
+
+// Walk every GPIO pin not claimed by a peripheral and put it in a
+// known-safe state at boot. Opted out on platforms whose IO layer
+// can't yet skip restricted (e.g. RIFSC-protected) ports cleanly.
+#if !defined(ENABLE_UNUSED_PINS_INIT)
+#define ENABLE_UNUSED_PINS_INIT 1
+#endif

@@ -21,6 +21,7 @@
 #pragma once
 
 #include "common/time.h"
+#include "common/maths.h"
 
 #include "pg/pg.h"
 #include "pg/rx.h"
@@ -40,7 +41,6 @@
 #define RXFAIL_STEP_TO_CHANNEL_VALUE(step) (PWM_PULSE_MIN + 25 * step)
 #define CHANNEL_VALUE_TO_RXFAIL_STEP(channelValue) ((constrain(channelValue, PWM_PULSE_MIN, PWM_PULSE_MAX) - PWM_PULSE_MIN) / 25)
 #define MAX_RXFAIL_RANGE_STEP ((PWM_PULSE_MAX - PWM_PULSE_MIN) / 25)
-
 
 typedef enum {
     RX_FRAME_PENDING = 0,
@@ -66,7 +66,8 @@ typedef enum {
     SERIALRX_FPORT = 12,
     SERIALRX_SRXL2 = 13,
     SERIALRX_GHST = 14,
-    SERIALRX_SPEKTRUM1024 = 15
+    SERIALRX_SPEKTRUM1024 = 15,
+    SERIALRX_MAVLINK = 16,
 } SerialRXType;
 
 #define MAX_SUPPORTED_RC_PPM_CHANNEL_COUNT          12
@@ -144,10 +145,10 @@ typedef struct rxRuntimeState_s {
     rcReadRawDataFnPtr  rcReadRawFn;
     rcFrameStatusFnPtr  rcFrameStatusFn;
     rcProcessFrameFnPtr rcProcessFrameFn;
-    rcGetFrameTimeUsFn *rcFrameTimeUsFn;
     uint16_t            *channelData;
     void                *frameData;
     timeUs_t            lastRcFrameTimeUs;
+    scaleRangef_t       scaleRange[NON_AUX_CHANNEL_COUNT];
 } rxRuntimeState_t;
 
 typedef enum {
@@ -158,6 +159,7 @@ typedef enum {
     RSSI_SOURCE_MSP,
     RSSI_SOURCE_FRAME_ERRORS,
     RSSI_SOURCE_RX_PROTOCOL_CRSF,
+    RSSI_SOURCE_RX_PROTOCOL_MAVLINK,
 } rssiSource_e;
 
 extern rssiSource_e rssiSource;
@@ -166,6 +168,7 @@ typedef enum {
     LQ_SOURCE_NONE = 0,
     LQ_SOURCE_RX_PROTOCOL_CRSF,
     LQ_SOURCE_RX_PROTOCOL_GHST,
+    LQ_SOURCE_RX_PROTOCOL_MAVLINK,
 } linkQualitySource_e;
 
 extern linkQualitySource_e linkQualitySource;
@@ -173,10 +176,13 @@ extern linkQualitySource_e linkQualitySource;
 extern rxRuntimeState_t rxRuntimeState; //!!TODO remove this extern, only needed once for channelCount
 
 void rxInit(void);
+#if ENABLE_RX_UDP
+void rxUpdateUdpChannels(const uint16_t *channels, uint8_t channelCount);
+#endif
 void rxProcessPending(bool state);
 bool rxUpdateCheck(timeUs_t currentTimeUs, timeDelta_t currentDeltaTimeUs);
 void rxFrameCheck(timeUs_t currentTimeUs, timeDelta_t currentDeltaTimeUs);
-bool rxIsReceivingSignal(void);
+bool isRxReceivingSignal(void);
 bool rxAreFlightChannelsValid(void);
 bool calculateRxChannelsAndUpdateFailsafe(timeUs_t currentTimeUs);
 
@@ -225,6 +231,6 @@ void resetAllRxChannelRangeConfigurations(rxChannelRangeConfig_t *rxChannelRange
 void suspendRxSignal(void);
 void resumeRxSignal(void);
 
-timeDelta_t rxGetFrameDelta(timeDelta_t *frameAgeUs);
+timeDelta_t rxGetFrameDelta(void);
 
 timeUs_t rxFrameTimeUs(void);

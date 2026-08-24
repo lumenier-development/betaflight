@@ -20,9 +20,31 @@
 
 #pragma once
 
+#include "common/time.h"
+
+#define MIN_MAVLINK_TELEMETRY_UPDATE_INTERVAL_MS 20
+
 void initMAVLinkTelemetry(void);
 void handleMAVLinkTelemetry(void);
 void checkMAVLinkTelemetryState(void);
 
 void freeMAVLinkTelemetryPort(void);
 void configureMAVLinkTelemetryPort(void);
+
+// Forward-typedef so consumers can hold pointers without dragging in
+// common/mavlink.h (which carries -Wpedantic-noisy unnamed unions).
+typedef struct __mavlink_message mavlink_message_t;
+
+// Pack a fully-formed mavlink_message_t into the shared TX buffer and write it
+// to the open MAVLink serial port. Implemented in telemetry/mavlink.c; shared
+// with telemetry/mavlink_mission.c so the mission module reuses the same
+// buffer/port path.
+void mavlinkSendMessage(mavlink_message_t *msg);
+
+typedef struct mavlinkTelemetryOutputMessage_s {
+    const uint32_t id;
+    const uint8_t stream;
+    timeMs_t updateInterval;
+    timeMs_t updateTime;
+    void (*const sendMessageFunc)(void);
+} mavlinkTelemetryOutputMessage_t;

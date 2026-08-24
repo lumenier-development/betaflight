@@ -25,19 +25,10 @@
 
 #include "pg/pg.h"
 
-#define MAX_NAME_LENGTH 16u
-
 typedef enum {
     CONFIGURATION_STATE_UNCONFIGURED = 0,
     CONFIGURATION_STATE_CONFIGURED,
 } configurationState_e;
-
-typedef struct pilotConfig_s {
-    char craftName[MAX_NAME_LENGTH + 1];
-    char pilotName[MAX_NAME_LENGTH + 1];
-} pilotConfig_t;
-
-PG_DECLARE(pilotConfig_t, pilotConfig);
 
 typedef struct systemConfig_s {
     uint8_t pidProfileIndex;
@@ -51,6 +42,7 @@ typedef struct systemConfig_s {
     uint8_t hseMhz;                 // Only used for F4 and G4 targets
     uint8_t configurationState;     // The state of the configuration (defaults / configured)
     uint8_t enableStickArming; // boolean that determines whether stick arming can be used
+    uint8_t activeBatteryProfile;
 } systemConfig_t;
 
 PG_DECLARE(systemConfig_t, systemConfig);
@@ -81,13 +73,15 @@ void changePidProfileFromCellCount(uint8_t cellCount);
 uint8_t getCurrentControlRateProfileIndex(void);
 void changeControlRateProfile(uint8_t profileIndex);
 
-bool canSoftwareSerialBeUsed(void);
+uint8_t getCurrentBatteryProfileIndex(void);
+void changeBatteryProfile(uint8_t profileIndex);
 
-uint16_t getCurrentMinthrottle(void);
+bool canSoftwareSerialBeUsed(void);
 
 void resetConfig(void);
 void targetConfiguration(void);
 void targetValidateConfiguration(void);
+void configTargetPreInit(void);
 
 bool isSystemConfigured(void);
 void setRebootRequired(void);

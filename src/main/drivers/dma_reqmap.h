@@ -25,7 +25,9 @@
 #include "drivers/dma.h"
 #include "drivers/timer.h"
 
+#ifdef USE_DMA_SPEC
 #include "dma_reqmap_mcu.h"
+#endif
 
 typedef uint16_t dmaCode_t;
 
@@ -50,7 +52,7 @@ typedef enum {
     DMA_PERIPH_SPI_SDI,
     DMA_PERIPH_ADC,
     DMA_PERIPH_SDIO,
-    DMA_PERIPH_UART_TX,
+    DMA_PERIPH_UART_TX,   // LPUART is handled as UART
     DMA_PERIPH_UART_RX,
     DMA_PERIPH_TIMUP,
 } dmaPeripheral_e;
@@ -63,7 +65,7 @@ struct timerHardware_s;
 
 dmaoptValue_t dmaoptByTag(ioTag_t ioTag);
 const dmaChannelSpec_t *dmaGetChannelSpecByPeripheral(dmaPeripheral_e device, uint8_t index, int8_t opt);
-const dmaChannelSpec_t *dmaGetChannelSpecByTimerValue(TIM_TypeDef *tim, uint8_t channel, dmaoptValue_t dmaopt);
+const dmaChannelSpec_t *dmaGetChannelSpecByTimerValue(timerResource_t *tim, uint8_t channel, dmaoptValue_t dmaopt);
 const dmaChannelSpec_t *dmaGetChannelSpecByTimer(const struct timerHardware_s *timer);
 dmaoptValue_t dmaGetOptionByTimer(const struct timerHardware_s *timer);
 dmaoptValue_t dmaGetUpOptionByTimer(const struct timerHardware_s *timer);

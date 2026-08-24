@@ -44,8 +44,16 @@
 #define ICM20649_WHO_AM_I_CONST             (0xE1)
 #define ICM20689_WHO_AM_I_CONST             (0x98)
 #define ICM42605_WHO_AM_I_CONST             (0x42)
+#define ICM42622P_WHO_AM_I_CONST            (0x46)
+#define ICM42686P_WHO_AM_I_CONST            (0x44)
 #define ICM42688P_WHO_AM_I_CONST            (0x47)
+#define ICM45686_WHO_AM_I_CONST             (0xE9)
+#define ICM45605_WHO_AM_I_CONST             (0xE5)
+#define IIM42652_WHO_AM_I_CONST             (0x6F)
+#define IIM42653_WHO_AM_I_CONST             (0x56)
 #define LSM6DSV16X_WHO_AM_I_CONST           (0x70)
+#define LSM6DSK320X_WHO_AM_I_CONST          (0x75)
+#define ICM40609_WHO_AM_I_CONST             (0x3B)
 
 // RA = Register Address
 
@@ -146,6 +154,7 @@ enum gyro_fsr_e {
     INV_FSR_500DPS,
     INV_FSR_1000DPS,
     INV_FSR_2000DPS,
+    INV_FSR_4000DPS,
     NUM_GYRO_FSR
 };
 
@@ -168,6 +177,7 @@ enum accel_fsr_e {
     INV_FSR_4G,
     INV_FSR_8G,
     INV_FSR_16G,
+    INV_FSR_32G,
     NUM_ACCEL_FSR
 };
 
@@ -200,12 +210,20 @@ typedef enum {
     ICM_20649_SPI,
     ICM_20689_SPI,
     ICM_42605_SPI,
+    ICM_42622P_SPI,
+    ICM_42686P_SPI,
     ICM_42688P_SPI,
+    IIM_42652_SPI,
+    IIM_42653_SPI,
     BMI_160_SPI,
     BMI_270_SPI,
     LSM6DSO_SPI,
     L3GD20_SPI,
-    LSM6DSV16X_SPI
+    LSM6DSV16X_SPI,
+    LSM6DSK320X_SPI,
+    ICM_45605_SPI,
+    ICM_45686_SPI,
+    ICM_40609_SPI
 } mpuSensor_e;
 
 typedef enum {
@@ -232,4 +250,4 @@ struct accDev_s;
 bool mpuAccRead(struct accDev_s *acc);
 bool mpuAccReadSPI(struct accDev_s *acc);
 
-busStatus_e mpuIntCallback(uint32_t arg);
+busStatus_e mpuIntCallback(uintptr_t arg);

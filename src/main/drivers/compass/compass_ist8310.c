@@ -44,7 +44,7 @@
 
 //#define DEBUG_MAG_DATA_READY_INTERRUPT
 
-#define IST8310_MAG_I2C_ADDRESS 0x0C
+#define IST8310_MAG_I2C_ADDRESS 0x0E
 
 /* ist8310 Slave Address Select : default address 0x0C
  *        CAD1  |  CAD0   |  Address
@@ -124,7 +124,7 @@ static bool ist8310Init(magDev_t *magDev)
     bool ack = busWriteRegister(dev, IST8310_REG_AVERAGE, IST8310_AVG_16);
     delay(6);
     ack = ack && busWriteRegister(dev, IST8310_REG_PDCNTL, IST8310_PULSE_DURATION_NORMAL);
-    delay(6); 
+    delay(6);
     ack = ack && busWriteRegister(dev, IST8310_REG_CNTRL1, IST8310_ODR_SINGLE);
 
     magDev->magOdrHz = 100;
@@ -132,43 +132,71 @@ static bool ist8310Init(magDev_t *magDev)
     return ack;
 }
 
-static bool ist8310Read(magDev_t * magDev, int16_t *magData)
+// Max DRDY poll attempts before re-triggering measurement (~15ms at 1ms recheck)
+#define IST8310_DRDY_MAX_RETRIES 15
+
+static bool ist8310Read(magDev_t *magDev, int16_t *magData)
 {
     extDevice_t *dev = &magDev->dev;
 
     static uint8_t buf[6];
+    static uint8_t status = 0;
+    static uint8_t retries = 0;
     const int LSB2FSV = 3; // 3mG - 14 bit
 
     static enum {
-        STATE_REQUEST_DATA,
-        STATE_FETCH_DATA,
-    } state = STATE_REQUEST_DATA;
+        STATE_CHECK_STATUS,
+        STATE_READ_DATA,
+        STATE_TRIGGER_MEASUREMENT,
+    } state = STATE_CHECK_STATUS;
 
     switch (state) {
         default:
-        case STATE_REQUEST_DATA:
-            if (busReadRegisterBufferStart(dev, IST8310_REG_DATA, buf, sizeof(buf))) {
-                state = STATE_FETCH_DATA;
+        case STATE_CHECK_STATUS:
+            if (status & IST8310_DRDY_MASK) {
+                // Data ready — start reading data registers
+                if (busReadRegisterBufferStart(dev, IST8310_REG_DATA, buf, sizeof(buf))) {
+                    state = STATE_READ_DATA;
+                    retries = 0;
+                }
+            } else if (retries >= IST8310_DRDY_MAX_RETRIES) {
+                // Timeout — re-trigger measurement to recover from stuck state
+                state = STATE_TRIGGER_MEASUREMENT;
+                retries = 0;
+            } else if (busReadRegisterBufferStart(dev, IST8310_REG_STAT1, &status, sizeof(status))) {
+                // Poll started — only successful starts consume a retry slot, so
+                // a stuck bus doesn't fast-path us into a bogus timeout.
+                retries++;
             }
-
             return false;
-        case STATE_FETCH_DATA:
-            // Looks like datasheet is incorrect and we need to invert Y axis to conform to right hand rule
+
+        case STATE_READ_DATA:
+            // Datasheet is incorrect — invert Y axis to conform to right hand rule
             magData[X] =  (int16_t)(buf[1] << 8 | buf[0]) * LSB2FSV;
             magData[Y] = -(int16_t)(buf[3] << 8 | buf[2]) * LSB2FSV;
             magData[Z] =  (int16_t)(buf[5] << 8 | buf[4]) * LSB2FSV;
 
-            // Force single measurement mode for next read
+            // Fire the next single-shot trigger in the same tick so the caller
+            // gets the sample without an extra recheck cycle. If the write
+            // can't be started, fall through to STATE_TRIGGER_MEASUREMENT and
+            // retry next tick (data stays in magData until then).
             if (busWriteRegisterStart(dev, IST8310_REG_CNTRL1, IST8310_ODR_SINGLE)) {
-                state = STATE_REQUEST_DATA;
-
+                state = STATE_CHECK_STATUS;
+                status = 0;
                 return true;
             }
+            state = STATE_TRIGGER_MEASUREMENT;
+            return false;
 
+        case STATE_TRIGGER_MEASUREMENT:
+            // Retry the trigger after STATE_READ_DATA couldn't start it
+            if (busWriteRegisterStart(dev, IST8310_REG_CNTRL1, IST8310_ODR_SINGLE)) {
+                state = STATE_CHECK_STATUS;
+                status = 0;
+                return true;
+            }
             return false;
     }
-
-    // TODO: do cross axis compensation
 
     return false;
 }

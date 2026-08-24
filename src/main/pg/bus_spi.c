@@ -31,6 +31,14 @@
 
 #include "bus_spi.h"
 
+#ifdef USE_SPI_DEVICE_0
+#ifndef SPI0_SCK_PIN
+#define SPI0_SCK_PIN    NONE
+#define SPI0_SDI_PIN    NONE
+#define SPI0_SDO_PIN    NONE
+#endif
+#endif
+
 #ifndef SPI1_SCK_PIN
 #define SPI1_SCK_PIN    NONE
 #define SPI1_SDI_PIN    NONE
@@ -67,8 +75,14 @@
 #define SPI6_SDO_PIN    NONE
 #endif
 
+#ifndef SPI7_SCK_PIN
+#define SPI7_SCK_PIN    NONE
+#define SPI7_SDI_PIN    NONE
+#define SPI7_SDO_PIN    NONE
+#endif
+
 typedef struct spiDefaultConfig_s {
-    SPIDevice device;
+    spiDevice_e device;
     ioTag_t sck;
     ioTag_t miso;
     ioTag_t mosi;
@@ -77,6 +91,9 @@ typedef struct spiDefaultConfig_s {
 } spiDefaultConfig_t;
 
 const spiDefaultConfig_t spiDefaultConfig[] = {
+#ifdef USE_SPI_DEVICE_0
+    { SPIDEV_0, IO_TAG(SPI0_SCK_PIN), IO_TAG(SPI0_SDI_PIN ), IO_TAG(SPI0_SDO_PIN ), SPI0_TX_DMA_OPT, SPI0_RX_DMA_OPT },
+#endif
 #ifdef USE_SPI_DEVICE_1
     { SPIDEV_1, IO_TAG(SPI1_SCK_PIN), IO_TAG(SPI1_SDI_PIN ), IO_TAG(SPI1_SDO_PIN ), SPI1_TX_DMA_OPT, SPI1_RX_DMA_OPT },
 #endif
@@ -94,6 +111,9 @@ const spiDefaultConfig_t spiDefaultConfig[] = {
 #endif
 #ifdef USE_SPI_DEVICE_6
     { SPIDEV_6, IO_TAG(SPI6_SCK_PIN), IO_TAG(SPI6_SDI_PIN), IO_TAG(SPI6_SDO_PIN), SPI6_TX_DMA_OPT, SPI6_RX_DMA_OPT },
+#endif
+#ifdef USE_SPI_DEVICE_7
+    { SPIDEV_7, IO_TAG(SPI7_SCK_PIN), IO_TAG(SPI7_SDI_PIN), IO_TAG(SPI7_SDO_PIN), SPI7_TX_DMA_OPT, SPI7_RX_DMA_OPT },
 #endif
 };
 

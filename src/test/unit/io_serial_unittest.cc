@@ -33,9 +33,10 @@ extern "C" {
     #include "pg/pg_ids.h"
     #include "pg/rx.h"
 
-    void serialInit(bool softserialEnabled, serialPortIdentifier_e serialPortToDisable);
+    void serialInit(bool softserialEnabled);
 
     PG_REGISTER(rxConfig_t, rxConfig, PG_RX_CONFIG, 0);
+    PG_REGISTER(serialPinConfig_t, serialPinConfig, PG_SERIAL_PIN_CONFIG, 0);
 }
 
 #include "unittest_macros.h"
@@ -44,7 +45,7 @@ extern "C" {
 TEST(IoSerialTest, TestFindPortConfig)
 {
     // given
-    serialInit(false, SERIAL_PORT_NONE);
+    serialInit(false);
 
     // when
     const serialPortConfig_t *portConfig = findSerialPortConfig(FUNCTION_MSP);
@@ -53,6 +54,11 @@ TEST(IoSerialTest, TestFindPortConfig)
     EXPECT_EQ(NULL, portConfig);
 }
 
+
+struct ResetCalled {};
+static const serialPort_t *hostPort = NULL;
+static uint32_t fakeMillis = 0;
+static int plusToSend = 0;
 
 // STUBS
 extern "C" {
@@ -64,17 +70,20 @@ extern "C" {
 
     bool telemetryCheckRxPortShared(const serialPortConfig_t *) { return false; }
 
-    uint32_t serialRxBytesWaiting(const serialPort_t *) { return 0; }
-    uint8_t serialRead(serialPort_t *) { return 0; }
+    uint32_t serialRxBytesWaiting(const serialPort_t *p) { return p == hostPort ? plusToSend : 0; }
+    uint8_t serialRead(serialPort_t *) { plusToSend--; return '+'; }
     void serialWrite(serialPort_t *, uint8_t) {}
+
+    uint32_t millis(void) { return fakeMillis += 1000; }  // advance so the "+++" idle guard always passes
+    void systemReset(void) { throw ResetCalled(); }
 
     serialPort_t *usbVcpOpen(void) { return NULL; }
 
-    serialPort_t *uartOpen(UARTDevice_e, serialReceiveCallbackPtr, void *, uint32_t, portMode_e, portOptions_e) {
+    serialPort_t *uartOpen(serialPortIdentifier_e, serialReceiveCallbackPtr, void *, uint32_t, portMode_e, portOptions_e) {
       return NULL;
     }
 
-    serialPort_t *openSoftSerial(softSerialPortIndex_e, serialReceiveCallbackPtr, void *, uint32_t, portMode_e, portOptions_e) {
+    serialPort_t *softSerialOpen(serialPortIdentifier_e, serialReceiveCallbackPtr, void *, uint32_t, portMode_e, portOptions_e) {
       return NULL;
     }
 
@@ -85,4 +94,16 @@ extern "C" {
     void serialSetBaudRateCb(serialPort_t *, void (*)(serialPort_t *context, uint32_t baud), serialPort_t *) {}
 
     void pinioSet(int, bool) {}
+}
+
+TEST(IoSerialTest, TestPassthroughEscape)
+{
+    // given
+    serialPort_t left = {}, right = {};
+    right.identifier = SERIAL_PORT_UART1;   // non-USB host -> "+++" escape enabled
+    hostPort = &right;
+    fakeMillis = 0;
+    plusToSend = 3;
+    // when "+++" arrives after an idle gap, then it must reboot out of passthrough
+    EXPECT_THROW(serialPassthrough(&left, &right, NULL, NULL), ResetCalled);
 }

@@ -32,6 +32,7 @@
 #include "pg/rx.h"
 
 #include "drivers/time.h"
+#include "drivers/usb_io.h"
 
 #include "config/config.h"
 #include "fc/core.h"
@@ -40,8 +41,13 @@
 #include "fc/runtime_config.h"
 
 #include "flight/failsafe.h"
+#include "flight/flight_plan_nav.h"
 
 #include "io/beeper.h"
+
+#include "pg/autopilot.h"
+
+#include "msp/msp_serial.h"
 
 #include "rx/rx.h"
 
@@ -68,11 +74,15 @@ PG_REGISTER_WITH_RESET_TEMPLATE(failsafeConfig_t, failsafeConfig, PG_FAILSAFE_CO
 #define DEFAULT_FAILSAFE_RECOVERY_DELAY 5            // 500ms of valid rx data needed to allow recovery from failsafe and arming block
 #endif
 
+#if ENABLE_RESCUE_PLAN
+#define FAILSAFE_AUTOPILOT_ENGAGE_GRACE_MS 1000      // core.c engages a staged rescue mission within a cycle; this bounds the wait
+#endif
+
 PG_RESET_TEMPLATE(failsafeConfig_t, failsafeConfig,
     .failsafe_throttle = 1000,                           // default throttle off.
     .failsafe_throttle_low_delay = 100,                  // default throttle low delay for "just disarm" on failsafe condition
     .failsafe_delay = 15,                                // 1.5 sec stage 1 period, can regain control on signal recovery, at idle in drop mode
-    .failsafe_off_delay = 10,                            // 1 sec in landing phase, if enabled
+    .failsafe_landing_time = 60,                         // 60 sec allowed in landing phase, if enabled, before disarm
     .failsafe_switch_mode = FAILSAFE_SWITCH_MODE_STAGE1, // default failsafe switch action is identical to rc link loss
     .failsafe_procedure = FAILSAFE_PROCEDURE_DROP_IT,    // default full failsafe procedure is 0: auto-landing
     .failsafe_recovery_delay = DEFAULT_FAILSAFE_RECOVERY_DELAY,
@@ -111,6 +121,9 @@ void failsafeReset(void)
     failsafeState.phase = FAILSAFE_IDLE;
     failsafeState.rxLinkState = FAILSAFE_RXLINK_DOWN;
     failsafeState.boxFailsafeSwitchWasOn = false;
+#if ENABLE_RESCUE_PLAN
+    failsafeState.autopilotEngageDeadline = 0;
+#endif
 }
 
 void failsafeInit(void)
@@ -149,7 +162,7 @@ static bool failsafeShouldHaveCausedLandingByNow(void)
 bool failsafeIsReceivingRxData(void)
 {
     return (failsafeState.rxLinkState == FAILSAFE_RXLINK_UP);
-    // False with BOXFAILSAFE switch or when no valid packets for 100ms or any flight channel invalid for 300ms,
+    // False with BOXFAILSAFE switch or when no valid packets for RXLOSS_TRIGGER_INTERVAL or any flight channel invalid for 300ms,
     // becomes true immediately BOXFAILSAFE switch reverts, or after recovery period expires when valid packets are received
     // rxLinkState RXLINK_DOWN (not up) is the trigger for the various failsafe stage 2 outcomes.
 }
@@ -184,7 +197,7 @@ void failsafeOnValidDataReceived(void)
 
     if (cmp32(failsafeState.validRxDataReceivedAt, failsafeState.validRxDataFailedAt) > (int32_t)failsafeState.receivingRxDataPeriodPreset) {
         // receivingRxDataPeriodPreset is rxDataRecoveryPeriod unless set to zero to allow immediate control recovery after switch induced failsafe
-        // rxDataRecoveryPeriod defaults to 1.0s with minimum of PERIOD_RXDATA_RECOVERY (200ms)
+        // rxDataRecoveryPeriod defaults to 1.0s with minimum of PERIOD_RXDATA_RECOVERY (100ms)
         // link is not considered 'up', after it has been 'down', until that recovery period has expired
         failsafeState.rxLinkState = FAILSAFE_RXLINK_UP;
         // after the rxDataRecoveryPeriod, typically 1s after receiving valid data, clear RXLOSS in OSD and permit arming
@@ -193,11 +206,11 @@ void failsafeOnValidDataReceived(void)
 }
 
 void failsafeOnValidDataFailed(void)
-// run from rc.c when packets are lost for more than the signal validation period (100ms), or immediately BOXFAILSAFE switch is active
+// run from rc.c when packets are lost for more than RXLOSS_TRIGGER_INTERVAL, or immediately BOXFAILSAFE switch is active
 // after the stage 1 delay has expired, sets the rxLinkState to RXLINK_DOWN, ie not up, causing failsafeIsReceivingRxData to become false
 // if failsafe is configured to go direct to stage 2, this is emulated immediately in failsafeUpdateState()
 {
-    //  set RXLOSS in OSD and block arming after 100ms of signal loss
+    //  set RXLOSS in OSD and block arming after RXLOSS_TRIGGER_INTERVAL of frame loss
     setArmingDisabled(ARMING_DISABLED_RX_FAILSAFE);
 
     failsafeState.validRxDataFailedAt = millis();
@@ -219,9 +232,47 @@ void failsafeCheckDataFailurePeriod(void)
     }
 }
 
-uint32_t failsafeFailurePeriodMs(void)
+LOCAL_UNUSED_FUNCTION static uint32_t failsafeFailurePeriodMs(void)
 {
     return failsafeState.rxDataFailurePeriod;
+}
+
+static void failsafeStartProcedure(failsafeProcedure_e procedure)
+{
+    switch (procedure) {
+        case FAILSAFE_PROCEDURE_AUTO_LANDING:
+            //  Enter Stage 2 with settings for landing mode
+            ENABLE_FLIGHT_MODE(FAILSAFE_MODE);
+            failsafeState.phase = FAILSAFE_LANDING;
+            failsafeState.landingShouldBeFinishedAt = millis() + failsafeConfig()->failsafe_landing_time * MILLIS_PER_SECOND;
+            break;
+
+        case FAILSAFE_PROCEDURE_DROP_IT:
+        default:
+            ENABLE_FLIGHT_MODE(FAILSAFE_MODE);
+            failsafeState.phase = FAILSAFE_LANDED;
+            //  go directly to FAILSAFE_LANDED
+            break;
+#ifdef USE_GPS_RESCUE
+        case FAILSAFE_PROCEDURE_GPS_RESCUE:
+#if ENABLE_RESCUE_PLAN
+            if (flightPlanNavStageRescuePlan()) {
+                // core.c engages the executor when it sees FAILSAFE_AUTOPILOT;
+                // the deadline bounds how long we wait for that to happen.
+                ENABLE_FLIGHT_MODE(FAILSAFE_MODE);
+                failsafeState.phase = FAILSAFE_AUTOPILOT;
+                failsafeState.autopilotEngageDeadline = millis() + FAILSAFE_AUTOPILOT_ENGAGE_GRACE_MS;
+            } else {
+                // no home/fix to build a rescue plan: baro-only auto-landing
+                failsafeStartProcedure(FAILSAFE_PROCEDURE_AUTO_LANDING);
+            }
+#else
+            ENABLE_FLIGHT_MODE(GPS_RESCUE_MODE);
+            failsafeState.phase = FAILSAFE_GPS_RESCUE;
+#endif
+            break;
+#endif
+    }
 }
 
 FAST_CODE_NOINLINE void failsafeUpdateState(void)
@@ -232,7 +283,7 @@ FAST_CODE_NOINLINE void failsafeUpdateState(void)
     }
 
     bool receivingRxData = failsafeIsReceivingRxData();
-    // returns state of FAILSAFE_RXLINK_UP, which 
+    // returns state of FAILSAFE_RXLINK_UP, which
     // goes false after the stage 1 delay, whether from signal loss or BOXFAILSAFE switch activation
     // goes true immediately BOXFAILSAFE switch is reverted, or after recovery delay once signal recovers
     // essentially means 'should be in failsafe stage 2'
@@ -247,8 +298,8 @@ FAST_CODE_NOINLINE void failsafeUpdateState(void)
         receivingRxData = false;
     }
 
-    // Beep RX lost only if we are not seeing data and are armed or have been armed earlier
-    if (!receivingRxData && (armed || ARMING_FLAG(WAS_EVER_ARMED))) {
+    // Beep RX lost whenever no RC data is received outside bench environment
+    if (!receivingRxData && !mspSerialIsConfiguratorActive()) {
         beeperMode = BEEPER_RX_LOST;
     }
 
@@ -314,25 +365,28 @@ FAST_CODE_NOINLINE void failsafeUpdateState(void)
                 } else {
                     failsafeState.active = true;
                     failsafeState.events++;
-                    switch (failsafeConfig()->failsafe_procedure) {
-                        case FAILSAFE_PROCEDURE_AUTO_LANDING:
-                            //  Enter Stage 2 with settings for landing mode
-                            ENABLE_FLIGHT_MODE(FAILSAFE_MODE);
-                            failsafeState.phase = FAILSAFE_LANDING;
-                            failsafeState.landingShouldBeFinishedAt = millis() + failsafeConfig()->failsafe_off_delay * MILLIS_PER_TENTH_SECOND;
-                            break;
-
-                        case FAILSAFE_PROCEDURE_DROP_IT:
-                            ENABLE_FLIGHT_MODE(FAILSAFE_MODE);
-                            failsafeState.phase = FAILSAFE_LANDED;
-                            //  go directly to FAILSAFE_LANDED
-                            break;
-#ifdef USE_GPS_RESCUE
-                        case FAILSAFE_PROCEDURE_GPS_RESCUE:
-                            ENABLE_FLIGHT_MODE(GPS_RESCUE_MODE);
-                            failsafeState.phase = FAILSAFE_GPS_RESCUE;
-                            break;
+#if ENABLE_FLIGHT_PLAN && !defined(USE_WING)
+                    if (FLIGHT_MODE(AUTOPILOT_MODE) && flightPlanNavIsActive()
+                        && flightPlanNavGetState() != FP_NAV_COMPLETE
+                        && flightPlanNavGetState() != FP_NAV_ABORTED
+                        && autopilotConfig()->rxLossPolicy == AP_RX_LOSS_CONTINUE) {
+                        // keep flying the mission; FAILSAFE_AUTOPILOT monitors it
+                        // and falls back to the configured procedure when it ends
+                        ENABLE_FLIGHT_MODE(FAILSAFE_MODE);
+                        failsafeState.phase = FAILSAFE_AUTOPILOT;
+#if ENABLE_RESCUE_PLAN
+                        // mission already engaged: no engage grace applies
+                        failsafeState.autopilotEngageDeadline = millis();
 #endif
+                    } else if (FLIGHT_MODE(AUTOPILOT_MODE)
+                        && autopilotConfig()->rxLossPolicy == AP_RX_LOSS_LAND) {
+                        // land at the current position: the mission disengages, and
+                        // pos-hold anchors the failsafe auto-landing descent
+                        failsafeStartProcedure(FAILSAFE_PROCEDURE_AUTO_LANDING);
+                    } else
+#endif
+                    {
+                        failsafeStartProcedure(failsafeConfig()->failsafe_procedure);
                     }
                     if (failsafeState.boxFailsafeSwitchWasOn) {
                         failsafeState.receivingRxDataPeriodPreset = 0;
@@ -367,7 +421,7 @@ FAST_CODE_NOINLINE void failsafeUpdateState(void)
             case FAILSAFE_GPS_RESCUE:
                 if (receivingRxData) {
                     if (areSticksActive(failsafeConfig()->failsafe_stick_threshold) || failsafeState.boxFailsafeSwitchWasOn) {
-                        // exits the rescue immediately if failsafe was initiated by switch, otherwise 
+                        // exits the rescue immediately if failsafe was initiated by switch, otherwise
                         // requires stick input to exit the rescue after a true Rx loss failsafe
                         // NB this test requires stick inputs to be received during GPS Rescue see PR #7936 for rationale
                         failsafeState.phase = FAILSAFE_RX_LOSS_RECOVERED;
@@ -381,6 +435,53 @@ FAST_CODE_NOINLINE void failsafeUpdateState(void)
                         failsafeState.phase = FAILSAFE_LANDED;
                         reprocessState = true;
                     }
+                }
+                break;
+#endif
+#if ENABLE_FLIGHT_PLAN && !defined(USE_WING)
+            case FAILSAFE_AUTOPILOT:
+                if (receivingRxData) {
+                    if (areSticksActive(failsafeConfig()->failsafe_stick_threshold) || failsafeState.boxFailsafeSwitchWasOn) {
+                        // same recovery rules as GPS Rescue: a true link-loss failsafe
+                        // needs stick input to hand control back
+                        failsafeState.phase = FAILSAFE_RX_LOSS_RECOVERED;
+                        reprocessState = true;
+                    }
+                } else if (!armed) {
+                    failsafeState.phase = FAILSAFE_LANDED;
+                    reprocessState = true;
+#if ENABLE_RESCUE_PLAN
+                } else if (!FLIGHT_MODE(AUTOPILOT_MODE)
+                    && flightPlanNavGetState() != FP_NAV_COMPLETE
+                    && flightPlanNavGetState() != FP_NAV_ABORTED
+                    && cmp32(millis(), failsafeState.autopilotEngageDeadline) < 0) {
+                    // a staged rescue mission is waiting for core.c to engage
+                    // the executor; give it the grace window before degrading
+                    beeperMode = BEEPER_RX_LOST_LANDING;
+                } else if (!FLIGHT_MODE(AUTOPILOT_MODE)
+                    || flightPlanNavGetState() == FP_NAV_COMPLETE
+                    || flightPlanNavGetState() == FP_NAV_ABORTED) {
+                    // mission ended, aborted, never engaged, or lost its
+                    // requirements while the link is still down. Re-selecting
+                    // GPS-RESCUE would re-stage the mission that just failed,
+                    // so degrade to the baro-only auto-landing instead.
+                    failsafeProcedure_e fallback = failsafeConfig()->failsafe_procedure;
+                    if (fallback == FAILSAFE_PROCEDURE_GPS_RESCUE) {
+                        fallback = FAILSAFE_PROCEDURE_AUTO_LANDING;
+                    }
+                    failsafeStartProcedure(fallback);
+                    reprocessState = true;
+#else
+                } else if (!FLIGHT_MODE(AUTOPILOT_MODE)
+                    || flightPlanNavGetState() == FP_NAV_COMPLETE
+                    || flightPlanNavGetState() == FP_NAV_ABORTED) {
+                    // mission ended, aborted, or lost its requirements (e.g. GPS)
+                    // while the link is still down: fall back to the configured procedure
+                    failsafeStartProcedure(failsafeConfig()->failsafe_procedure);
+                    reprocessState = true;
+#endif
+                } else {
+                    beeperMode = BEEPER_RX_LOST_LANDING;
                 }
                 break;
 #endif
@@ -425,8 +526,8 @@ FAST_CODE_NOINLINE void failsafeUpdateState(void)
                 break;
         }
 
-    DEBUG_SET(DEBUG_FAILSAFE, 0, failsafeState.boxFailsafeSwitchWasOn);
-    DEBUG_SET(DEBUG_FAILSAFE, 3, failsafeState.phase);
+        DEBUG_SET(DEBUG_FAILSAFE, 0, failsafeState.boxFailsafeSwitchWasOn);
+        DEBUG_SET(DEBUG_FAILSAFE, 3, failsafeState.phase);
 
     } while (reprocessState);
 

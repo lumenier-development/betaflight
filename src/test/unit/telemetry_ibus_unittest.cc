@@ -53,6 +53,8 @@ extern "C" {
     float rcCommand[4] = {0, 0, 0, 0};
     telemetryConfig_t telemetryConfig_System;
     batteryConfig_s batteryConfig_System;
+    static batteryProfile_t batteryProfile_System;
+    const batteryProfile_t *currentBatteryProfile = &batteryProfile_System;
     attitudeEulerAngles_t attitude = EULER_INITIALIZE;
     acc_t acc;
     baro_t baro;
@@ -148,6 +150,10 @@ serialPort_t serialTestInstance;
 serialPortConfig_t serialTestInstanceConfig = {
     .functionMask = 0,
     .identifier = SERIAL_PORT_DUMMY_IDENTIFIER,
+    .msp_baudrateIndex = 5,
+    .gps_baudrateIndex = 5,
+    .blackbox_baudrateIndex = 5,
+    .telemetry_baudrateIndex = 5
 };
 
 static serialPortConfig_t *findSerialPortConfig_stub_retval;
@@ -272,7 +278,7 @@ uint8_t serialRead(serialPort_t *instance)
 
 void serialTestResetBuffers()
 {
-    serialReadStub = { {0} }; 
+    serialReadStub = { {0} };
     serialWriteStub = { {0} };
 }
 

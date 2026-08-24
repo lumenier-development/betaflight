@@ -32,13 +32,33 @@
 #include "drivers/bus_spi.h"
 #include "drivers/exti.h"
 #include "drivers/io.h"
-#include "drivers/io_impl.h"
 #include "drivers/nvic.h"
 #include "drivers/sensor.h"
 #include "drivers/system.h"
 #include "drivers/time.h"
 
 #include "sensors/gyro.h"
+
+// When ENABLE_BMI270_ALIGN_AS_ICM is set, rotate the BMI270 raw data by CW90 so it
+// presents identical axes to an ICM42688 and one board alignment serves either populated
+// chip. Opt-in per config (#define ENABLE_BMI270_ALIGN_AS_ICM 1); off by default so no
+// existing board changes frame unless its config explicitly asks for it.
+#if !defined(ENABLE_BMI270_ALIGN_AS_ICM)
+#define ENABLE_BMI270_ALIGN_AS_ICM 0
+#endif
+
+static inline void bmi270StoreAxes(int16_t *dst, int16_t x, int16_t y, int16_t z)
+{
+#if ENABLE_BMI270_ALIGN_AS_ICM
+    dst[X] = y;
+    dst[Y] = (x == INT16_MIN) ? INT16_MAX : -x;
+    dst[Z] = z;
+#else
+    dst[X] = x;
+    dst[Y] = y;
+    dst[Z] = z;
+#endif
+}
 
 // 10 MHz max SPI frequency
 #define BMI270_MAX_SPI_CLK_HZ 10000000
@@ -122,7 +142,7 @@ typedef enum {
 
     BMI270_VAL_INT_MAP_DATA_DRDY_INT1 = 0x04,// enable the data ready interrupt pin 1
     BMI270_VAL_INT_MAP_FIFO_WM_INT1 = 0x02,  // enable the FIFO watermark interrupt pin 1
-    BMI270_VAL_INT1_IO_CTRL_PINMODE = 0x0A,  // active high, push-pull, output enabled, input disabled 
+    BMI270_VAL_INT1_IO_CTRL_PINMODE = 0x0A,  // active high, push-pull, output enabled, input disabled
     BMI270_VAL_FIFO_CONFIG_0 = 0x00,         // don't stop when full, disable sensortime frame
     BMI270_VAL_FIFO_CONFIG_1 = 0x80,         // only gyro data in FIFO, use headerless mode
     BMI270_VAL_FIFO_DOWNS = 0x00,            // select unfiltered gyro data with no downsampling (6.4KHz samples)
@@ -278,7 +298,8 @@ extiCallbackRec_t bmi270IntCallbackRec;
  */
 // Called in ISR context
 // Gyro read has just completed
-busStatus_e bmi270Intcallback(uint32_t arg)
+#ifdef USE_DMA
+static busStatus_e bmi270Intcallback(uintptr_t arg)
 {
     gyroDev_t *gyro = (gyroDev_t *)arg;
     int32_t gyroDmaDuration = cmpTimeCycles(getCycleCounter(), gyro->gyroLastEXTI);
@@ -291,8 +312,9 @@ busStatus_e bmi270Intcallback(uint32_t arg)
 
     return BUS_READY;
 }
+#endif
 
-void bmi270ExtiHandler(extiCallbackRec_t *cb)
+static void bmi270ExtiHandler(extiCallbackRec_t *cb)
 {
     gyroDev_t *gyro = container_of(cb, gyroDev_t, exti);
     extDevice_t *dev = &gyro->dev;
@@ -358,9 +380,7 @@ static bool bmi270AccRead(accDev_t *acc)
 
         // This data was read from the gyro, which is the same SPI device as the acc
         int16_t *accData = (int16_t *)dev->rxBuf;
-        acc->ADCRaw[X] = accData[1];
-        acc->ADCRaw[Y] = accData[2];
-        acc->ADCRaw[Z] = accData[3];
+        bmi270StoreAxes(acc->ADCRaw, accData[1], accData[2], accData[3]);
         break;
     }
 
@@ -389,8 +409,9 @@ static bool bmi270GyroReadRegister(gyroDev_t *gyro)
         gyro->gyroDmaMaxDuration = 5;
         // Using DMA for gyro access upsets the scheduler on the F4
         if (gyro->detectedEXTI > GYRO_EXTI_DETECT_THRESHOLD) {
+#ifdef USE_DMA
             if (spiUseDMA(dev)) {
-                dev->callbackArg = (uint32_t)gyro;
+                dev->callbackArg = (uintptr_t)gyro;
                 dev->txBuf[0] = BMI270_REG_ACC_DATA_X_LSB | 0x80;
                 gyro->segments[0].len = 14;
                 gyro->segments[0].callback = bmi270Intcallback;
@@ -398,7 +419,9 @@ static bool bmi270GyroReadRegister(gyroDev_t *gyro)
                 gyro->segments[0].u.buffers.rxData = dev->rxBuf;
                 gyro->segments[0].negateCS = true;
                 gyro->gyroModeSPI = GYRO_EXTI_INT_DMA;
-            } else {
+            } else
+#endif
+            {
                 // Interrupts are present, but no DMA
                 gyro->gyroModeSPI = GYRO_EXTI_INT;
             }
@@ -425,9 +448,7 @@ static bool bmi270GyroReadRegister(gyroDev_t *gyro)
         // Wait for completion
         spiWait(dev);
 
-        gyro->gyroADCRaw[X] = gyroData[1];
-        gyro->gyroADCRaw[Y] = gyroData[2];
-        gyro->gyroADCRaw[Z] = gyroData[3];
+        bmi270StoreAxes(gyro->gyroADCRaw, gyroData[1], gyroData[2], gyroData[3]);
 
         break;
     }
@@ -436,9 +457,7 @@ static bool bmi270GyroReadRegister(gyroDev_t *gyro)
     {
         // If read was triggered in interrupt don't bother waiting. The worst that could happen is that we pick
         // up an old value.
-        gyro->gyroADCRaw[X] = gyroData[4];
-        gyro->gyroADCRaw[Y] = gyroData[5];
-        gyro->gyroADCRaw[Z] = gyroData[6];
+        bmi270StoreAxes(gyro->gyroADCRaw, gyroData[4], gyroData[5], gyroData[6]);
         break;
     }
 
@@ -488,9 +507,7 @@ static bool bmi270GyroReadFifo(gyroDev_t *gyro)
         // that data is available, but this safeguard is needed to prevent bad things in
         // case it does happen.
         if ((gyroX != INT16_MIN) || (gyroY != INT16_MIN) || (gyroZ != INT16_MIN)) {
-            gyro->gyroADCRaw[X] = gyroX;
-            gyro->gyroADCRaw[Y] = gyroY;
-            gyro->gyroADCRaw[Z] = gyroZ;
+            bmi270StoreAxes(gyro->gyroADCRaw, gyroX, gyroY, gyroZ);
             dataRead = true;
         }
         fifoLength -= BMI270_FIFO_FRAME_SIZE;
@@ -554,7 +571,6 @@ bool bmi270SpiAccDetect(accDev_t *acc)
 
     return true;
 }
-
 
 bool bmi270SpiGyroDetect(gyroDev_t *gyro)
 {

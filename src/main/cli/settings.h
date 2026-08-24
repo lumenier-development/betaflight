@@ -24,7 +24,6 @@
 #include <stdbool.h>
 #include "pg/pg.h"
 
-
 typedef enum {
     TABLE_OFF_ON = 0,
     TABLE_UNIT,
@@ -34,6 +33,11 @@ typedef enum {
     TABLE_GPS_SBAS_MODE,
     TABLE_GPS_UBLOX_MODELS,
     TABLE_GPS_UBLOX_UTC_STANDARD,
+#endif
+#ifndef USE_WING
+    TABLE_AP_YAW_MODE,
+    TABLE_AP_RX_LOSS_POLICY,
+    TABLE_AP_GEOFENCE_ACTION,
 #endif
 #ifdef USE_GPS_RESCUE
     TABLE_GPS_RESCUE_SANITY_CHECK,
@@ -65,6 +69,9 @@ typedef enum {
 #endif
     TABLE_DEBUG,
     TABLE_MOTOR_PWM_PROTOCOL,
+#ifdef USE_DSHOT_TELEMETRY
+    TABLE_DSHOT_EDT,
+#endif
     TABLE_GYRO_LPF_TYPE,
     TABLE_DTERM_LPF_TYPE,
     TABLE_FAILSAFE,
@@ -83,6 +90,12 @@ typedef enum {
 #ifdef USE_RANGEFINDER
     TABLE_RANGEFINDER_HARDWARE,
 #endif
+#ifdef USE_OPTICALFLOW
+    TABLE_OPTICALFLOW_HARDWARE,
+#endif
+#ifdef USE_POSITION_HOLD
+    TABLE_POSHOLD_SOURCE,
+#endif
 #ifdef USE_GYRO_OVERFLOW_CHECK
     TABLE_GYRO_OVERFLOW_CHECK,
 #endif
@@ -92,9 +105,6 @@ typedef enum {
 #endif
 #ifdef USE_LED_STRIP
     TABLE_RGB_GRB,
-#endif
-#ifdef USE_MULTI_GYRO
-    TABLE_GYRO,
 #endif
     TABLE_THROTTLE_LIMIT_TYPE,
 #if defined(USE_VIDEO_SYSTEM)
@@ -113,16 +123,14 @@ typedef enum {
 #ifdef USE_VTX_COMMON
     TABLE_VTX_LOW_POWER_DISARM,
 #endif
-    TABLE_GYRO_HARDWARE,
 #ifdef USE_SDCARD
     TABLE_SDCARD_MODE,
 #endif
 #ifdef USE_LAUNCH_CONTROL
     TABLE_LAUNCH_CONTROL_MODE,
 #endif
-#ifdef USE_TPA_MODE
     TABLE_TPA_MODE,
-#endif
+    TABLE_SPA_MODE,
 #ifdef USE_LED_STRIP
     TABLE_LED_PROFILE,
     TABLE_LEDSTRIP_COLOR,
@@ -135,6 +143,9 @@ typedef enum {
     TABLE_OSD_DISPLAYPORT_DEVICE,
 #ifdef USE_OSD
     TABLE_OSD_LOGO_ON_ARMING,
+#if ENABLE_OSD_CUSTOM_TEXT
+    TABLE_OSD_CUSTOM_TEXT_TERMINATOR,
+#endif
 #endif
     TABLE_MIXER_TYPE,
     TABLE_SIMPLIFIED_TUNING_PIDS_MODE,
@@ -143,7 +154,16 @@ typedef enum {
 #endif
 #ifdef USE_RX_EXPRESSLRS
     TABLE_FREQ_DOMAIN,
-    TABLE_SWITCH_MODE,
+#endif
+#ifdef USE_ADVANCED_TPA
+    TABLE_TPA_CURVE_TYPE,
+#endif
+#ifdef USE_WING
+    TABLE_TPA_SPEED_TYPE,
+    TABLE_YAW_TYPE,
+#endif // USE_WING
+#ifdef USE_TRANSPONDER
+    TABLE_TRANSPONDER_PROVIDER,
 #endif
     LOOKUP_TABLE_COUNT
 } lookupTableIndex_e;
@@ -153,10 +173,9 @@ typedef struct lookupTableEntry_s {
     const uint8_t valueCount;
 } lookupTableEntry_t;
 
-
 #define VALUE_TYPE_OFFSET 0
 #define VALUE_SECTION_OFFSET 3
-#define VALUE_MODE_OFFSET 5
+#define VALUE_MODE_OFFSET 6
 
 typedef enum {
     // value type, bits 0-2
@@ -167,13 +186,14 @@ typedef enum {
     VAR_UINT32 = (4 << VALUE_TYPE_OFFSET),
     VAR_INT32 = (5 << VALUE_TYPE_OFFSET),
 
-    // value section, bits 3-4
+    // value section, bits 3-5
     MASTER_VALUE = (0 << VALUE_SECTION_OFFSET),
     PROFILE_VALUE = (1 << VALUE_SECTION_OFFSET),
     PROFILE_RATE_VALUE = (2 << VALUE_SECTION_OFFSET),
     HARDWARE_VALUE = (3 << VALUE_SECTION_OFFSET), // Part of the master section, but used for the hardware definition
+    PROFILE_BATTERY_VALUE = (4 << VALUE_SECTION_OFFSET),
 
-    // value mode, bits 5-7
+    // value mode, bits 6-8
     MODE_DIRECT = (0 << VALUE_MODE_OFFSET),
     MODE_LOOKUP = (1 << VALUE_MODE_OFFSET),
     MODE_ARRAY = (2 << VALUE_MODE_OFFSET),
@@ -181,10 +201,9 @@ typedef enum {
     MODE_STRING = (4 << VALUE_MODE_OFFSET),
 } cliValueFlag_e;
 
-
 #define VALUE_TYPE_MASK (0x07)
-#define VALUE_SECTION_MASK (0x18)
-#define VALUE_MODE_MASK (0xE0)
+#define VALUE_SECTION_MASK (0x38)
+#define VALUE_MODE_MASK (0x1C0)
 
 typedef struct cliMinMaxConfig_s {
     const int16_t min;
@@ -232,13 +251,12 @@ typedef union {
 
 typedef struct clivalue_s {
     const char *name;
-    const uint8_t type;                       // see cliValueFlag_e
+    const uint16_t type;                      // see cliValueFlag_e
     const cliValueConfig_t config;
 
     pgn_t pgn;
     uint16_t offset;
 } PTR_PACKING clivalue_t;
-
 
 extern const lookupTableEntry_t lookupTables[];
 extern const uint16_t valueTableEntryCount;
@@ -246,18 +264,6 @@ extern const uint16_t valueTableEntryCount;
 extern const clivalue_t valueTable[];
 //extern const uint8_t lookupTablesEntryCount;
 
-extern const char * const lookupTableGyroHardware[];
-
-extern const char * const lookupTableAccHardware[];
-//extern const uint8_t lookupTableAccHardwareEntryCount;
-
-extern const char * const lookupTableBaroHardware[];
-//extern const uint8_t lookupTableBaroHardwareEntryCount;
-
-extern const char * const lookupTableMagHardware[];
-//extern const uint8_t lookupTableMagHardwareEntryCount;
-
-extern const char * const lookupTableRangefinderHardware[];
 
 extern const char * const lookupTableLedstripColors[];
 

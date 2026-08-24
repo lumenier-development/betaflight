@@ -24,6 +24,9 @@
 #define DEBUG_MODE DEBUG_NONE
 #endif
 
+#ifndef I2C0_CLOCKSPEED
+#define I2C0_CLOCKSPEED 800
+#endif
 #ifndef I2C1_CLOCKSPEED
 #define I2C1_CLOCKSPEED 800
 #endif
@@ -36,19 +39,51 @@
 #ifndef I2C4_CLOCKSPEED
 #define I2C4_CLOCKSPEED 800
 #endif
+#ifndef I2C5_CLOCKSPEED
+#define I2C5_CLOCKSPEED 800
+#endif
+#ifndef I2C6_CLOCKSPEED
+#define I2C6_CLOCKSPEED 800
+#endif
+#ifndef I2C7_CLOCKSPEED
+#define I2C7_CLOCKSPEED 800
+#endif
+#ifndef I2C8_CLOCKSPEED
+#define I2C8_CLOCKSPEED 800
+#endif
+#ifndef I2C9_CLOCKSPEED
+#define I2C9_CLOCKSPEED 800
+#endif
+#ifndef I2C10_CLOCKSPEED
+#define I2C10_CLOCKSPEED 800
+#endif
 
 // Default values for internal pullup
 
 #if defined(USE_I2C_PULLUP)
+#define I2C0_PULLUP true
 #define I2C1_PULLUP true
 #define I2C2_PULLUP true
 #define I2C3_PULLUP true
 #define I2C4_PULLUP true
+#define I2C5_PULLUP true
+#define I2C6_PULLUP true
+#define I2C7_PULLUP true
+#define I2C8_PULLUP true
+#define I2C9_PULLUP true
+#define I2C10_PULLUP true
 #else
+#define I2C0_PULLUP false
 #define I2C1_PULLUP false
 #define I2C2_PULLUP false
 #define I2C3_PULLUP false
 #define I2C4_PULLUP false
+#define I2C5_PULLUP false
+#define I2C6_PULLUP false
+#define I2C7_PULLUP false
+#define I2C8_PULLUP false
+#define I2C9_PULLUP false
+#define I2C10_PULLUP false
 #endif
 
 // Extracted from rx/rx.c and rx/rx.h
@@ -91,16 +126,6 @@
 #ifdef USE_TIMER_MGMT
 #ifndef MAX_TIMER_PINMAP_COUNT
 #define MAX_TIMER_PINMAP_COUNT 21 // Largest known for F405RG (OMNINXT)
-#endif
-#endif
-
-#if defined(USE_UART1) || defined(USE_UART2) || defined(USE_UART3) || defined(USE_UART4) || defined(USE_UART5) || defined(USE_UART6) || defined(USE_UART7) || defined(USE_UART8)
-#define USE_UART
-#endif
-
-#ifdef USE_UART
-#if defined(INVERTER_PIN_UART1) || defined(INVERTER_PIN_UART2) || defined(INVERTER_PIN_UART3) || defined(INVERTER_PIN_UART4) || defined(INVERTER_PIN_UART5) || defined(INVERTER_PIN_UART6)
-#define USE_INVERTER
 #endif
 #endif
 
@@ -171,6 +196,14 @@
 #endif // USE_ADC
 
 #ifdef USE_SPI
+#ifdef USE_SPI_DEVICE_0
+#ifndef SPI0_TX_DMA_OPT
+#define SPI0_TX_DMA_OPT (DMA_OPT_UNUSED)
+#endif
+#ifndef SPI0_RX_DMA_OPT
+#define SPI0_RX_DMA_OPT (DMA_OPT_UNUSED)
+#endif
+#endif
 #ifdef USE_SPI_DEVICE_1
 #ifndef SPI1_TX_DMA_OPT
 #define SPI1_TX_DMA_OPT (DMA_OPT_UNUSED)
@@ -218,6 +251,23 @@
 #ifndef SPI6_RX_DMA_OPT
 #define SPI6_RX_DMA_OPT (DMA_OPT_UNUSED)
 #endif
+#endif
+#ifdef USE_SPI_DEVICE_7
+#ifndef SPI7_TX_DMA_OPT
+#define SPI7_TX_DMA_OPT (DMA_OPT_UNUSED)
+#endif
+#ifndef SPI7_RX_DMA_OPT
+#define SPI7_RX_DMA_OPT (DMA_OPT_UNUSED)
+#endif
+#endif
+#endif
+
+#ifdef USE_UART0
+#ifndef UART0_TX_DMA_OPT
+#define UART0_TX_DMA_OPT (DMA_OPT_UNUSED)
+#endif
+#ifndef UART0_RX_DMA_OPT
+#define UART0_RX_DMA_OPT (DMA_OPT_UNUSED)
 #endif
 #endif
 
@@ -311,6 +361,51 @@
 #endif
 #endif
 
+#ifdef USE_UART11
+#ifndef UART11_TX_DMA_OPT
+#define UART11_TX_DMA_OPT (DMA_OPT_UNUSED)
+#endif
+#ifndef UART11_RX_DMA_OPT
+#define UART11_RX_DMA_OPT (DMA_OPT_UNUSED)
+#endif
+#endif
+
+#ifdef USE_UART12
+#ifndef UART12_TX_DMA_OPT
+#define UART12_TX_DMA_OPT (DMA_OPT_UNUSED)
+#endif
+#ifndef UART12_RX_DMA_OPT
+#define UART12_RX_DMA_OPT (DMA_OPT_UNUSED)
+#endif
+#endif
+
+#ifdef USE_UART13
+#ifndef UART13_TX_DMA_OPT
+#define UART13_TX_DMA_OPT (DMA_OPT_UNUSED)
+#endif
+#ifndef UART13_RX_DMA_OPT
+#define UART13_RX_DMA_OPT (DMA_OPT_UNUSED)
+#endif
+#endif
+
+#ifdef USE_UART14
+#ifndef UART14_TX_DMA_OPT
+#define UART14_TX_DMA_OPT (DMA_OPT_UNUSED)
+#endif
+#ifndef UART14_RX_DMA_OPT
+#define UART14_RX_DMA_OPT (DMA_OPT_UNUSED)
+#endif
+#endif
+
+#ifdef USE_UART15
+#ifndef UART15_TX_DMA_OPT
+#define UART15_TX_DMA_OPT (DMA_OPT_UNUSED)
+#endif
+#ifndef UART15_RX_DMA_OPT
+#define UART15_RX_DMA_OPT (DMA_OPT_UNUSED)
+#endif
+#endif
+
 #ifndef RTC6705_CS_PIN
 #define RTC6705_CS_PIN NONE
 #endif
@@ -339,4 +434,20 @@
 #define MAX_SUPPORTED_MOTORS 8
 #endif
 #define MAX_SUPPORTED_SERVOS 8
+#endif
+
+#ifndef BOX_USER1_NAME
+#define BOX_USER1_NAME "USER1"
+#endif
+
+#ifndef BOX_USER2_NAME
+#define BOX_USER2_NAME "USER2"
+#endif
+
+#ifndef BOX_USER3_NAME
+#define BOX_USER3_NAME "USER3"
+#endif
+
+#ifndef BOX_USER4_NAME
+#define BOX_USER4_NAME "USER4"
 #endif

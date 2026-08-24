@@ -48,7 +48,6 @@ typedef enum {
     RCDEVICE_STATE_WAITING_CRC,
 } RCDEVICE_PARSER_STATE;
 
-
 typedef struct {
     uint8_t state;
     uint8_t expectedDataLength;
@@ -86,7 +85,7 @@ static uint8_t runcamDeviceGetRespLen(uint8_t command)
     return 0;
 }
 
-static bool rcdeviceRespCtxQueuePush(rcdeviceWaitingResponseQueue *queue, rcdeviceResponseParseContext_t *respCtx)
+static bool rcdeviceRespCtxQueuePush(rcdeviceWaitingResponseQueue *queue, const rcdeviceResponseParseContext_t *respCtx)
 {
     if (queue == NULL || (queue->itemCount + 1) > MAX_WAITING_RESPONSES) {
         return false;
@@ -487,7 +486,8 @@ void rcdeviceReceive(timeUs_t currentTimeUs)
                 requestParserContext.state = RCDEVICE_STATE_WAITING_DATA;
                 break;
             case RCDEVICE_STATE_WAITING_DATA:
-                if (requestParserContext.request.dataLength < requestParserContext.expectedDataLength) {
+                if (requestParserContext.request.dataLength < requestParserContext.expectedDataLength &&
+                    requestParserContext.request.dataLength < (RCDEVICE_PROTOCOL_MAX_DATA_SIZE - 1)) {
                     requestParserContext.request.data[requestParserContext.request.dataLength] = c;
                     requestParserContext.request.dataLength++;
                 }

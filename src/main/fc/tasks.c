@@ -36,7 +36,7 @@
 #include "config/feature.h"
 
 #include "drivers/accgyro/accgyro.h"
-#include "drivers/camera_control_impl.h"
+#include "drivers/camera_control.h"
 #include "drivers/compass/compass.h"
 #include "drivers/sensor.h"
 #include "drivers/serial.h"
@@ -53,16 +53,20 @@
 #include "fc/rc_controls.h"
 #include "fc/runtime_config.h"
 
+#include "flight/alt_hold.h"
 #include "flight/gps_rescue.h"
 #include "flight/imu.h"
 #include "flight/mixer.h"
 #include "flight/pid.h"
 #include "flight/position.h"
+#include "flight/pos_hold.h"
 
 #include "io/asyncfatfs/asyncfatfs.h"
 #include "io/beeper.h"
 #include "io/dashboard.h"
+#include "io/dronecan/dronecan.h"
 #include "io/flashfs.h"
+#include "io/gimbal_control.h"
 #include "io/gps.h"
 #include "io/ledstrip.h"
 #include "io/piniobox.h"
@@ -77,6 +81,9 @@
 #include "msp/msp_serial.h"
 
 #include "osd/osd.h"
+#if ENABLE_OSD_CUSTOM_TEXT
+#include "osd/osd_custom_text.h"
+#endif
 
 #include "pg/rx.h"
 #include "pg/motor.h"
@@ -95,6 +102,7 @@
 #include "sensors/gyro.h"
 #include "sensors/sensors.h"
 #include "sensors/rangefinder.h"
+#include "sensors/opticalflow.h"
 
 #include "telemetry/telemetry.h"
 #include "telemetry/crsf.h"
@@ -130,6 +138,14 @@ static void taskMain(timeUs_t currentTimeUs)
 
 static void taskHandleSerial(timeUs_t currentTimeUs)
 {
+#if ENABLE_BF_OBL
+    // OBL armed IWDG before BXNS; refresh from TASK_SERIAL — the
+    // scheduler exempts TASK_SERIAL from the time-budget check so it
+    // always runs at its nominal rate. If scheduler itself wedges,
+    // refresh stops, IWDG fires and OBL routes the next boot to DFU.
+    BF_OBL_IWDG_REFRESH();
+#endif
+
     UNUSED(currentTimeUs);
 
 #if defined(USE_VCP)
@@ -137,13 +153,6 @@ static void taskHandleSerial(timeUs_t currentTimeUs)
     DEBUG_SET(DEBUG_USB, 1, usbVcpIsConnected());
 #endif
 
-#ifdef USE_CLI
-    // in cli mode, all serial stuff goes to here. enter cli mode by sending #
-    if (cliMode) {
-        cliProcess();
-        return;
-    }
-#endif
     bool evaluateMspData = ARMING_FLAG(ARMED) ? MSP_SKIP_NON_MSP_DATA : MSP_EVALUATE_NON_MSP_DATA;
     mspSerialProcess(evaluateMspData, mspFcProcessCommand, mspFcProcessReply);
 }
@@ -207,7 +216,7 @@ static void taskUpdateRxMain(timeUs_t currentTimeUs)
         break;
 
     case RX_STATE_UPDATE:
-        // updateRcCommands sets rcCommand, which is needed by updateAltHoldState and updateSonarAltHoldState
+        // updateRcCommands sets rcCommand, which is needed by updateAltHold
         updateRcCommands();
         updateArmingStatus();
 
@@ -283,7 +292,7 @@ static void taskUpdateMag(timeUs_t currentTimeUs)
 }
 #endif
 
-#if defined(USE_BARO) || defined(USE_GPS)
+#if defined(USE_BARO) || defined(USE_GPS) || defined(USE_RANGEFINDER)
 static void taskCalculateAltitude(timeUs_t currentTimeUs)
 {
     UNUSED(currentTimeUs);
@@ -292,7 +301,7 @@ static void taskCalculateAltitude(timeUs_t currentTimeUs)
 #endif // USE_BARO || USE_GPS
 
 #if defined(USE_RANGEFINDER)
-void taskUpdateRangefinder(timeUs_t currentTimeUs)
+static void taskUpdateRangefinder(timeUs_t currentTimeUs)
 {
     UNUSED(currentTimeUs);
 
@@ -303,6 +312,20 @@ void taskUpdateRangefinder(timeUs_t currentTimeUs)
     rangefinderUpdate();
 
     rangefinderProcess(getCosTiltAngle());
+}
+#endif
+
+#ifdef USE_OPTICALFLOW
+static void taskUpdateOpticalflow(timeUs_t currentTimeUs)
+{
+    UNUSED(currentTimeUs);
+
+    if (!sensors(SENSOR_OPTICALFLOW)) {
+        return;
+    }
+
+    opticalflowUpdate();
+    opticalflowProcess();
 }
 #endif
 
@@ -318,13 +341,13 @@ static void taskTelemetry(timeUs_t currentTimeUs)
 #endif
 
 #ifdef USE_CAMERA_CONTROL
-static void taskCameraControl(uint32_t currentTime)
+static void taskCameraControl(timeUs_t currentTimeUs)
 {
     if (ARMING_FLAG(ARMED)) {
         return;
     }
 
-    cameraControlProcess(currentTime);
+    cameraControlProcess(currentTimeUs);
 }
 #endif
 
@@ -382,6 +405,14 @@ task_attribute_t task_attributes[TASK_COUNT] = {
     [TASK_GPS_RESCUE] = DEFINE_TASK("GPS_RESCUE", NULL, NULL, taskGpsRescue, TASK_PERIOD_HZ(TASK_GPS_RESCUE_RATE_HZ), TASK_PRIORITY_MEDIUM),
 #endif
 
+#ifdef USE_ALTITUDE_HOLD
+    [TASK_ALTHOLD] = DEFINE_TASK("ALTHOLD", NULL, NULL, updateAltHold, TASK_PERIOD_HZ(ALTHOLD_TASK_RATE_HZ), TASK_PRIORITY_LOW),
+#endif
+
+#ifdef USE_POSITION_HOLD
+    [TASK_POSHOLD] = DEFINE_TASK("POSHOLD", NULL, NULL, updatePosHold, TASK_PERIOD_HZ(POSHOLD_TASK_RATE_HZ), TASK_PRIORITY_LOW),
+#endif
+
 #ifdef USE_MAG
     [TASK_COMPASS] = DEFINE_TASK("COMPASS", NULL, NULL, taskUpdateMag, TASK_PERIOD_HZ(TASK_COMPASS_RATE_HZ), TASK_PRIORITY_LOW),
 #endif
@@ -390,7 +421,7 @@ task_attribute_t task_attributes[TASK_COUNT] = {
     [TASK_BARO] = DEFINE_TASK("BARO", NULL, NULL, taskUpdateBaro, TASK_PERIOD_HZ(TASK_BARO_RATE_HZ), TASK_PRIORITY_LOW),
 #endif
 
-#if defined(USE_BARO) || defined(USE_GPS)
+#if defined(USE_BARO) || defined(USE_GPS) || defined(USE_RANGEFINDER)
     [TASK_ALTITUDE] = DEFINE_TASK("ALTITUDE", NULL, NULL, taskCalculateAltitude, TASK_PERIOD_HZ(TASK_ALTITUDE_RATE_HZ), TASK_PRIORITY_LOW),
 #endif
 
@@ -445,13 +476,27 @@ task_attribute_t task_attributes[TASK_COUNT] = {
 #ifdef USE_RANGEFINDER
     [TASK_RANGEFINDER] = DEFINE_TASK("RANGEFINDER", NULL, NULL, taskUpdateRangefinder, TASK_PERIOD_HZ(10), TASK_PRIORITY_LOWEST),
 #endif
-
+#ifdef USE_OPTICALFLOW
+    [TASK_OPTICALFLOW] = DEFINE_TASK("OPTICALFLOW", NULL, NULL, taskUpdateOpticalflow, TASK_PERIOD_HZ(10), TASK_PRIORITY_LOWEST),
+#endif
 #ifdef USE_CRSF_V3
-    [TASK_SPEED_NEGOTIATION] = DEFINE_TASK("SPEED_NEGOTIATION", NULL, NULL, speedNegotiationProcess, TASK_PERIOD_HZ(100), TASK_PRIORITY_LOW),
+    [TASK_SPEED_NEGOTIATION] = DEFINE_TASK("SPEED_NEGOT'N", NULL, NULL, speedNegotiationProcess, TASK_PERIOD_HZ(100), TASK_PRIORITY_LOW),
 #endif
 
 #ifdef USE_RC_STATS
     [TASK_RC_STATS] = DEFINE_TASK("RC_STATS", NULL, NULL, rcStatsUpdate, TASK_PERIOD_HZ(100), TASK_PRIORITY_LOW),
+#endif
+
+#ifdef USE_GIMBAL
+    [TASK_GIMBAL] = DEFINE_TASK("GIMBAL", NULL, NULL, gimbalUpdate, TASK_PERIOD_HZ(100), TASK_PRIORITY_MEDIUM),
+#endif
+
+#if ENABLE_OSD_CUSTOM_TEXT
+    [TASK_OSD_CUSTOM_TEXT] = DEFINE_TASK("OSD_CTEXT", NULL, NULL, osdCustomTextUpdate, TASK_PERIOD_HZ(100), TASK_PRIORITY_LOW),
+#endif
+
+#if ENABLE_DRONECAN
+    [TASK_DRONECAN] = DEFINE_TASK("DRONECAN", NULL, NULL, dronecanUpdate, TASK_PERIOD_HZ(50), TASK_PRIORITY_LOW),
 #endif
 
 };
@@ -521,6 +566,12 @@ void tasksInit(void)
     }
 #endif
 
+#ifdef USE_OPTICALFLOW
+    if (sensors(SENSOR_OPTICALFLOW)) {
+        setTaskEnabled(TASK_OPTICALFLOW, featureIsEnabled(FEATURE_OPTICALFLOW));
+    }
+#endif
+
     setTaskEnabled(TASK_RX, true);
 
     setTaskEnabled(TASK_DISPATCH, dispatchIsEnabled());
@@ -537,6 +588,16 @@ void tasksInit(void)
     setTaskEnabled(TASK_GPS_RESCUE, featureIsEnabled(FEATURE_GPS));
 #endif
 
+#ifdef USE_ALTITUDE_HOLD
+    setTaskEnabled(TASK_ALTHOLD, sensors(SENSOR_BARO) ||
+                                 sensors(SENSOR_RANGEFINDER) ||
+                                 featureIsEnabled(FEATURE_GPS));
+#endif
+
+#ifdef USE_POSITION_HOLD
+    setTaskEnabled(TASK_POSHOLD, featureIsEnabled(FEATURE_GPS) || sensors(SENSOR_OPTICALFLOW));
+#endif
+
 #ifdef USE_MAG
     setTaskEnabled(TASK_COMPASS, sensors(SENSOR_MAG));
 #endif
@@ -545,8 +606,8 @@ void tasksInit(void)
     setTaskEnabled(TASK_BARO, sensors(SENSOR_BARO));
 #endif
 
-#if defined(USE_BARO) || defined(USE_GPS)
-    setTaskEnabled(TASK_ALTITUDE, sensors(SENSOR_BARO) || featureIsEnabled(FEATURE_GPS));
+#if defined(USE_BARO) || defined(USE_GPS) || defined(USE_RANGEFINDER)
+    setTaskEnabled(TASK_ALTITUDE, sensors(SENSOR_BARO) || featureIsEnabled(FEATURE_GPS) || sensors(SENSOR_RANGEFINDER));
 #endif
 
 #ifdef USE_DASHBOARD
@@ -622,11 +683,23 @@ void tasksInit(void)
     setTaskEnabled(TASK_SPEED_NEGOTIATION, useCRSF);
 #endif
 
-#ifdef SIMULATOR_MULTITHREAD
+#if ENABLE_SIMULATOR_MULTITHREAD
     rescheduleTask(TASK_RX, 1);
 #endif
 
 #ifdef USE_RC_STATS
     setTaskEnabled(TASK_RC_STATS, true);
+#endif
+
+#ifdef USE_GIMBAL
+    setTaskEnabled(TASK_GIMBAL, true);
+#endif
+
+#if ENABLE_OSD_CUSTOM_TEXT
+    setTaskEnabled(TASK_OSD_CUSTOM_TEXT, true);
+#endif
+
+#if ENABLE_DRONECAN
+    setTaskEnabled(TASK_DRONECAN, dronecanIsInitialised());
 #endif
 }

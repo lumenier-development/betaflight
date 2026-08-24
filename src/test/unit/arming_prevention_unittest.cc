@@ -42,28 +42,34 @@ extern "C" {
     #include "flight/mixer.h"
     #include "flight/pid.h"
     #include "flight/position.h"
+    #include "flight/position_estimator.h"
+    #include "flight/position_nav.h"
     #include "flight/servos.h"
 
     #include "io/beeper.h"
     #include "io/gps.h"
 
+    #include "pg/autopilot.h"
     #include "pg/gps_rescue.h"
     #include "pg/motor.h"
+    #include "pg/rx.h"
+
     #include "pg/pg.h"
     #include "pg/pg_ids.h"
-    #include "pg/rx.h"
 
     #include "rx/rx.h"
 
     #include "scheduler/scheduler.h"
 
     #include "sensors/acceleration.h"
+    #include "sensors/compass.h"
     #include "sensors/gyro.h"
 
     #include "telemetry/telemetry.h"
 
     PG_REGISTER(accelerometerConfig_t, accelerometerConfig, PG_ACCELEROMETER_CONFIG, 0);
     PG_REGISTER(blackboxConfig_t, blackboxConfig, PG_BLACKBOX_CONFIG, 0);
+    PG_REGISTER(compassConfig_t, compassConfig, PG_COMPASS_CONFIG, 0);
     PG_REGISTER(gyroConfig_t, gyroConfig, PG_GYRO_CONFIG, 0);
     PG_REGISTER(mixerConfig_t, mixerConfig, PG_MIXER_CONFIG, 0);
     PG_REGISTER(pidConfig_t, pidConfig, PG_PID_CONFIG, 0);
@@ -77,6 +83,7 @@ extern "C" {
     PG_REGISTER(gpsConfig_t, gpsConfig, PG_GPS_CONFIG, 0);
     PG_REGISTER(gpsRescueConfig_t, gpsRescueConfig, PG_GPS_RESCUE, 0);
     PG_REGISTER(positionConfig_t, positionConfig, PG_POSITION, 0);
+    PG_REGISTER(autopilotConfig_t, autopilotConfig, PG_AUTOPILOT, 0);
 
     float rcData[MAX_SUPPORTED_RC_CHANNEL_COUNT];
     uint16_t averageSystemLoadPercent = 0;
@@ -86,21 +93,24 @@ extern "C" {
     pidProfile_t *currentPidProfile;
     controlRateConfig_t *currentControlRateProfile;
     attitudeEulerAngles_t attitude;
+
     gpsSolutionData_t gpsSol;
+    uint16_t GPS_distanceToHome;
+    gpsLocation_t GPS_home_llh;
+    uint32_t GPS_distanceToHomeCm = 0;
+    int16_t GPS_directionToHome = 0;
+
     uint32_t targetPidLooptime;
     bool cmsInMenu = false;
     float axisPID_P[3], axisPID_I[3], axisPID_D[3], axisPIDSum[3];
     rxRuntimeState_t rxRuntimeState = {};
-    uint32_t GPS_distanceToHomeCm = 0;
-    int16_t GPS_directionToHome = 0;
     acc_t acc = {};
+    gyro_t gyro = {};
     bool mockIsUpright = false;
     uint8_t activePidLoopDenom = 1;
 
     float getGpsDataIntervalSeconds(void) { return 0.1f; }
-    void pt1FilterUpdateCutoff(pt1Filter_t *filter, float k) { filter->k = k; }
-    void pt2FilterUpdateCutoff(pt2Filter_t *filter, float k) { filter->k = k; }
-    void pt3FilterUpdateCutoff(pt3Filter_t *filter, float k) { filter->k = k; }
+    float getGpsDataFrequencyHz(void) { return 10.0f; }
 }
 
 uint32_t simulationFeatureFlags = 0;
@@ -1049,9 +1059,14 @@ TEST(ArmingPreventionTest, Paralyze)
 
 // STUBS
 extern "C" {
+    void sincosf_approx(float x, float *out_s, float *out_c) {
+        *out_s = sin_approx(x);
+        *out_c = cos_approx(x);
+    }
+
     uint32_t micros(void) { return simulationTime; }
     uint32_t millis(void) { return micros() / 1000; }
-    bool rxIsReceivingSignal(void) { return simulationHaveRx; }
+    bool isRxReceivingSignal(void) { return simulationHaveRx; }
 
     bool featureIsEnabled(uint32_t f) { return simulationFeatureFlags & f; }
     void warningLedFlash(void) {}
@@ -1125,40 +1140,70 @@ extern "C" {
     bool isFixedWing(void) { return false; }
     void compassStartCalibration(void) {}
     bool compassIsCalibrationComplete(void) { return true; }
+    bool compassEnabledAndCalibrated(void) { return true; }
     bool isUpright(void) { return mockIsUpright; }
     void blackboxLogEvent(FlightLogEvent, union flightLogEventData_u *) {};
     void gyroFiltering(timeUs_t) {};
-    timeDelta_t rxGetFrameDelta(timeDelta_t *) { return 0; }
+    timeDelta_t rxGetFrameDelta() { return 0; }
     void updateRcRefreshRate(timeUs_t) {};
     uint16_t getAverageSystemLoadPercent(void) { return 0; }
     bool isMotorProtocolEnabled(void) { return true; }
     void pinioBoxTaskControl(void) {}
     void schedulerSetNextStateTime(timeDelta_t) {}
-    float getAltitude(void) { return 3000.0f; }
-    float pt1FilterGain(float, float) { return 0.5f; }
-    float pt2FilterGain(float, float)  { return 0.1f; }
-    float pt3FilterGain(float, float)  { return 0.1f; }
-    void pt2FilterInit(pt2Filter_t *throttleDLpf, float) {
-        UNUSED(throttleDLpf);
-    }
-    float pt2FilterApply(pt2Filter_t *throttleDLpf, float) {
-        UNUSED(throttleDLpf);
-        return 0.0f;
-    }
-    void pt1FilterInit(pt1Filter_t *velocityDLpf, float) {
-        UNUSED(velocityDLpf);
-    }
-    float pt1FilterApply(pt1Filter_t *velocityDLpf, float) {
-        UNUSED(velocityDLpf);
-        return 0.0f;
-    }
-    void pt3FilterInit(pt3Filter_t *velocityUpsampleLpf, float) {
-        UNUSED(velocityUpsampleLpf);
-    }
-    float pt3FilterApply(pt3Filter_t *velocityUpsampleLpf, float) {
-        UNUSED(velocityUpsampleLpf);
-        return 0.0f;
-    }
+
+    bool isAltitudeAvailable(void)  { return true; }
+    float getAltitudeCm(void) {return 0.0f;}
+    float getAltitudeDerivative(void) {return 0.0f;}
+    float getAltitudeCmControl(void) { return 0.0f; }
+    float getAltitudeDerivativeControl(void) { return 0.0f; }
+
+    float sin_approx(float) {return 0.0f;}
+    float cos_approx(float) {return 1.0f;}
+    float atan2_approx(float, float) {return 0.0f;}
+
     void getRcDeflectionAbs(void) {}
-    uint32_t getCpuPercentageLate(void) { return 0; };
+    uint32_t getCpuPercentageLate(void) { return 0; }
+    void GPS_distance_cm_bearing(const gpsLocation_t *from, const gpsLocation_t *to, bool dist3d, uint32_t *dist, int32_t *bearing)
+    {
+       UNUSED(from);
+       UNUSED(to);
+       UNUSED(dist3d);
+       UNUSED(dist);
+       UNUSED(bearing);
+    }
+
+void GPS_distance2d(const gpsLocation_t* /*from*/, const gpsLocation_t* /*to*/, vector2_t* /*dest*/) { }
+
+    static positionEstimate3d_t stubEstimate = {};
+    const positionEstimate3d_t *positionEstimatorGetEstimate(void) { return &stubEstimate; }
+    void positionEstimatorEnableXY(bool /*enable*/) { }
+    bool positionEstimatorIsValidXY(void) { return false; }
+
+    void positionNavInit(void) { }
+    void positionNavReset(void) { }
+    void positionNavUpdate(float /*dt*/, const positionEstimate3d_t * /*est*/) { }
+    bool positionNavHasActiveTarget(void) { return false; }
+    bool positionNavTargetReached(void) { return false; }
+    vector3_t positionNavGetTargetVelocityCmS(void) { return (vector3_t){{0, 0, 0}}; }
+    const positionNavCommand_t *positionNavGetActiveCommand(void) { return NULL; }
+    bool imuIsHeadingValid(void) { return true; }
+
+    bool canUseGPSHeading;
+    bool gpsHasNewData(uint16_t* gpsStamp) {
+        UNUSED(*gpsStamp);
+        return true;
+    }
+    float getSetpointRate(int axis)
+    {
+        UNUSED(axis);
+        return 0.0f;
+    }
+
+    float getMaxRcRate(int axis)
+    {
+        UNUSED(axis);
+        return 720.0f; // nonzero: autopilotInit divides maxVelocity by this
+    }
+
+    float getGpsCosLat(void) { return 1.0f; }
 }

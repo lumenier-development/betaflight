@@ -29,8 +29,6 @@
 #include "drivers/transponder_ir.h"
 #include "drivers/transponder_ir_arcitimer.h"
 
-#if defined(STM32F4) || defined(STM32F7) || defined(STM32H7) || defined(STM32G4) || defined(UNIT_TEST)
-
 extern const struct transponderVTable arcitimerTansponderVTable;
 static uint16_t dmaBufferOffset;
 
@@ -66,11 +64,8 @@ void updateTransponderDMABufferArcitimer(transponder_t *transponder, const uint8
     dmaBufferOffset = 0;
 }
 
-
-
 const struct transponderVTable arcitimerTansponderVTable = {
     updateTransponderDMABufferArcitimer,
 };
 
-#endif
 #endif

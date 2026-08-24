@@ -29,7 +29,6 @@
 #include "build/debug.h"
 
 #include "drivers/io.h"
-#include "drivers/io_impl.h"
 #include "drivers/light_led.h"
 #include "drivers/system.h"
 #include "drivers/time.h"
@@ -102,7 +101,6 @@ static void spektrumDataReceive(uint16_t c, void *data)
         }
     }
 }
-
 
 uint32_t spekChannelData[SPEKTRUM_MAX_SUPPORTED_CHANNEL_COUNT];
 
@@ -191,7 +189,7 @@ static float spektrumReadRawRC(const rxRuntimeState_t *rxRuntimeState, uint8_t c
 
 #ifdef USE_SPEKTRUM_BIND
 
-bool spekShouldBind(uint8_t spektrum_sat_bind)
+static bool spekShouldBind(uint8_t spektrum_sat_bind)
 {
 #ifdef USE_SPEKTRUM_BIND_PLUG
     IO_t BindPlug = IOGetByTag(rxConfig()->spektrum_bind_plug_ioTag);
@@ -237,10 +235,10 @@ void spektrumBind(rxConfig_t *rxConfig)
         if (!portConfig) {
             return;
         }
-
-        int index = SERIAL_PORT_IDENTIFIER_TO_INDEX(portConfig->identifier);
-        ioTag_t txPin = serialPinConfig()->ioTagTx[index];
-        ioTag_t rxPin = serialPinConfig()->ioTagRx[index];
+#if defined(USE_UART) || defined(USE_LPUART) || defined(USE_SOFTSERIAL)
+        const int resourceIndex = serialResourceIndex(portConfig->identifier);
+        const ioTag_t txPin = serialPinConfig()->ioTagTx[resourceIndex];
+        const ioTag_t rxPin = serialPinConfig()->ioTagRx[resourceIndex];
 
         // Take care half-duplex case
         switch (rxRuntimeState.serialrxProvider) {
@@ -255,7 +253,7 @@ void spektrumBind(rxConfig_t *rxConfig)
         default:
             bindPin = rxConfig->halfDuplex ? txPin : rxPin;
         }
-
+#endif
         if (!bindPin) {
             return;
         }
@@ -289,7 +287,6 @@ void spektrumBind(rxConfig_t *rxConfig)
         delayMicroseconds(120);
 
     }
-
 
     // Release the bind pin to avoid interference with an actual rx pin,
     // when rxConfig->spektrum_bind_pin_override_ioTag is used.
@@ -387,7 +384,6 @@ bool spektrumInit(const rxConfig_t *rxConfig, rxRuntimeState_t *rxRuntimeState)
 
     rxRuntimeState->rcReadRawFn = spektrumReadRawRC;
     rxRuntimeState->rcFrameStatusFn = spektrumFrameStatus;
-    rxRuntimeState->rcFrameTimeUsFn = rxFrameTimeUs;
 #if defined(USE_TELEMETRY_SRXL)
     rxRuntimeState->rcProcessFrameFn = spektrumProcessFrame;
 #endif

@@ -56,4 +56,3 @@ bool flashfsIsReady(void);
 bool flashfsIsEOF(void);
 
 bool flashfsVerifyEntireFlash(void);
-

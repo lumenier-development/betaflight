@@ -36,7 +36,7 @@
 #include "drivers/time.h"
 #include "drivers/timer.h"
 #include "drivers/light_led.h"
-
+#include "drivers/motor.h"
 #include "flight/mixer.h"
 
 #include "io/beeper.h"
@@ -47,12 +47,6 @@
 #endif
 #if defined(USE_SERIAL_4WAY_SK_BOOTLOADER)
 #include "io/serial_4way_stk500v2.h"
-#endif
-
-#if defined(USE_HAL_DRIVER)
-#define Bit_RESET GPIO_PIN_RESET
-#elif defined(AT32F435)
-#define Bit_RESET 0
 #endif
 
 #define USE_TXRX_LED
@@ -114,11 +108,11 @@ inline bool isMcuConnected(void)
 
 inline bool isEscHi(uint8_t selEsc)
 {
-    return (IORead(escHardware[selEsc].io) != Bit_RESET);
+    return (IORead(escHardware[selEsc].io) != GPIO_PIN_RESET);
 }
 inline bool isEscLo(uint8_t selEsc)
 {
-    return (IORead(escHardware[selEsc].io) == Bit_RESET);
+    return (IORead(escHardware[selEsc].io) == GPIO_PIN_RESET);
 }
 
 inline void setEscHi(uint8_t selEsc)
@@ -143,23 +137,21 @@ inline void setEscOutput(uint8_t selEsc)
 
 uint8_t esc4wayInit(void)
 {
-    // StopPwmAllMotors();
-    // XXX Review effect of motor refactor
-    //pwmDisableMotors();
-    escCount = 0;
+    uint8_t escIndex = 0;
+    motorDisable();
     memset(&escHardware, 0, sizeof(escHardware));
-    pwmOutputPort_t *pwmMotors = pwmGetMotors();
     for (volatile uint8_t i = 0; i < MAX_SUPPORTED_MOTORS; i++) {
-        if (pwmMotors[i].enabled) {
-            if (pwmMotors[i].io != IO_NONE) {
-                escHardware[escCount].io = pwmMotors[i].io;
-                setEscInput(escCount);
-                setEscHi(escCount);
-                escCount++;
+        if (motorIsMotorEnabled(i)) {
+            const IO_t io = motorGetIo(i);
+            if (io != IO_NONE) {
+                escHardware[escIndex].io = io;
+                setEscInput(escIndex);
+                setEscHi(escIndex);
+                escIndex++;
             }
         }
     }
-    motorDisable();
+    escCount = escIndex;
     return escCount;
 }
 
@@ -172,7 +164,6 @@ void esc4wayRelease(void)
     }
     motorEnable();
 }
-
 
 #define SET_DISCONNECTED DeviceInfo.words[0] = 0
 
@@ -204,7 +195,6 @@ void esc4wayRelease(void)
 //get Version Number 01..255
 #define cmd_InterfaceGetVersion 0x33  // '3' version
 // RETURN: uint8_t AVersionNumber + ACK
-
 
 // Exit / Restart Interface - can be used to switch to Box Mode
 #define cmd_InterfaceExit 0x34       // '4' exit
@@ -274,7 +264,6 @@ void esc4wayRelease(void)
 //PARAM: uint8_t ADRESS_Hi + ADRESS_Lo + BUffLen + Buffer[0..255]
 //RETURN: ACK
 
-
 // responses
 #define ACK_OK                  0x00
 // #define ACK_I_UNKNOWN_ERROR       0x01
@@ -321,7 +310,7 @@ void esc4wayRelease(void)
   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
   POSSIBILITY OF SUCH DAMAGE. */
-uint16_t _crc_xmodem_update (uint16_t crc, uint8_t data)
+static uint16_t _crc_xmodem_update (uint16_t crc, uint8_t data)
 {
         int i;
 
@@ -336,12 +325,10 @@ uint16_t _crc_xmodem_update (uint16_t crc, uint8_t data)
 }
 // * End copyright
 
-
 #define ATMEL_DEVICE_MATCH ((pDeviceInfo->words[0] == 0x9307) || (pDeviceInfo->words[0] == 0x930A) || \
         (pDeviceInfo->words[0] == 0x930F) || (pDeviceInfo->words[0] == 0x940B))
 
 #define SILABS_DEVICE_MATCH ((pDeviceInfo->words[0] > 0xE800) && (pDeviceInfo->words[0] < 0xF900))
-
 
 // BLHeli_32 MCU ID hi > 0x00 and < 0x90 / lo always = 0x06
 #define ARM_DEVICE_MATCH ((pDeviceInfo->bytes[1] > 0x00) && (pDeviceInfo->bytes[1] < 0x90) && (pDeviceInfo->bytes[0] == 0x06))
@@ -511,7 +498,6 @@ void esc4wayProcess(serialPort_t *mspPort)
             // wtf.D_FLASH_ADDR_L=Adress_L;
             ioMem.D_PTR_I = ParamBuf;
 
-
             switch (CMD) {
                 // ******* Interface related stuff *******
                 case cmd_InterfaceTestAlive:
@@ -579,12 +565,13 @@ void esc4wayProcess(serialPort_t *mspPort)
                 case cmd_InterfaceSetMode:
                 {
 #if defined(USE_SERIAL_4WAY_BLHELI_BOOTLOADER) && defined(USE_SERIAL_4WAY_SK_BOOTLOADER)
-                    if ((ParamBuf[0] <= imARM_BLB) && (ParamBuf[0] >= imSIL_BLB)) {
+                    if ((ParamBuf[0] <= imARM_BLB) && (ParamBuf[0] >= imSIL_BLB))
 #elif defined(USE_SERIAL_4WAY_BLHELI_BOOTLOADER)
-                    if (((ParamBuf[0] <= imATM_BLB)||(ParamBuf[0] == imARM_BLB)) && (ParamBuf[0] >= imSIL_BLB)) {
+                    if (((ParamBuf[0] <= imATM_BLB)||(ParamBuf[0] == imARM_BLB)) && (ParamBuf[0] >= imSIL_BLB))
 #elif defined(USE_SERIAL_4WAY_SK_BOOTLOADER)
-                    if (ParamBuf[0] == imSK) {
+                    if (ParamBuf[0] == imSK)
 #endif
+                    {
                         CurrentInterfaceMode = ParamBuf[0];
                     } else {
                         ACK_OUT = ACK_I_INVALID_PARAM;
@@ -940,7 +927,5 @@ void esc4wayProcess(serialPort_t *mspPort)
     };
 
 }
-
-
 
 #endif
