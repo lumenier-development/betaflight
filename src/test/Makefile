@@ -101,6 +101,16 @@ baro_bmp388_unittest_DEFINES := \
                 USE_BARO_BMP388= \
                 USE_BARO_SPI_BMP388=
 
+baro_bmp5xx_unittest_SRC := \
+		$(USER_DIR)/drivers/barometer/barometer_bmp5xx.c
+
+baro_bmp5xx_unittest_DEFINES := \
+                USE_EXTI= \
+                USE_BARO_BMP580= \
+                USE_BARO_SPI_BMP580= \
+                USE_BARO_BMP581= \
+                USE_BARO_SPI_BMP581=
+
 baro_ms5611_unittest_SRC := \
 		$(USER_DIR)/drivers/barometer/barometer_ms5611.c
 
@@ -435,6 +445,7 @@ serial_feature_map_unittest_DEFINES := \
 		USE_OPTICALFLOW= \
 		USE_OPTICALFLOW_MT= \
 		USE_OSD= \
+		USE_MSP_DISPLAYPORT= \
 		USE_TELEMETRY= \
 		USE_TELEMETRY_FRSKY_HUB= \
 		USE_TELEMETRY_HOTT= \
@@ -627,7 +638,8 @@ position_estimator_unittest_SRC := \
 position_estimator_unittest_DEFINES := \
 		USE_GPS= \
 		USE_BARO= \
-		USE_RANGEFINDER=
+		USE_RANGEFINDER= \
+		USE_OPTICALFLOW=
 
 position_nav_unittest_SRC := \
 		$(USER_DIR)/flight/position_nav.c \
