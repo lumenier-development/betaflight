@@ -71,21 +71,21 @@ static void posHoldCheckSticks(void)
     setSticksActiveStatus(sticksDeflected);
 }
 
-static bool sensorsOk(void)
+static bool sensorsOk(bool allowHeadingRecovery)
 {
     if (!positionEstimatorIsValidXY()) {
-        DEBUG_SET(DEBUG_AUTOPILOT_HEADING, 6, 1);
+        DEBUG_SET(DEBUG_AUTOPILOT_HEADING, 6, 1);  //!< Position Hold Sensor Status
         return false;
     }
 
     if (positionEstimatorIsHeadingRequired()) {
-        if (!imuIsHeadingValid()) {
-            DEBUG_SET(DEBUG_AUTOPILOT_HEADING, 6, 2);
+        if (!imuIsHeadingValid() && !allowHeadingRecovery) {
+            DEBUG_SET(DEBUG_AUTOPILOT_HEADING, 6, 2);  //!< Position Hold Sensor Status
             return false;
         }
     }
 
-    DEBUG_SET(DEBUG_AUTOPILOT_HEADING, 6, 0);
+    DEBUG_SET(DEBUG_AUTOPILOT_HEADING, 6, 0);  //!< Position Hold Sensor Status
     return true;
 }
 bool posHoldUpdateCheck(timeUs_t currentTimeUs, timeDelta_t currentDeltaTimeUs)
@@ -133,7 +133,7 @@ void updatePosHold(timeUs_t currentTimeUs)
     if (posHold.isEnabled) {
         posHoldCheckSticks();
         const bool sensorsWereOk = posHold.areSensorsOk;
-        posHold.areSensorsOk = sensorsOk();
+        posHold.areSensorsOk = sensorsOk(isHeadingRecoveryActive());
         if (posHold.areSensorsOk) {
             if (!sensorsWereOk) {
                 // Sensors came back after a dropout: the craft drifted while
@@ -168,7 +168,7 @@ bool posHoldFailure(void) {
 // Pre-engagement readiness: the entry conditions alone, without the
 // control-failure checks in posHoldFailure() that only apply once engaged.
 bool posHoldReady(void) {
-    return sensorsOk();
+    return sensorsOk(false);
 }
 
 #endif // USE_POSITION_HOLD
