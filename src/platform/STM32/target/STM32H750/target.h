@@ -97,7 +97,6 @@
 #endif
 
 #define USE_EXTI
-#define USE_TIMER_UP_CONFIG
 
 #if !(defined(CONFIG_IN_EXTERNAL_FLASH) || defined(CONFIG_IN_MEMORY_MAPPED_FLASH) || defined(CONFIG_IN_RAM) || defined(CONFIG_IN_SDCARD))
 #error "The configured MCU only has one flash page which contains the bootloader, no spare flash pages available, use external storage for persistent config or ram for target testing"
@@ -107,4 +106,10 @@
 
 #if defined(USE_LED_STRIP) && !defined(USE_LED_STRIP_CACHE_MGMT)
 #define USE_LED_STRIP_CACHE_MGMT
+#endif
+
+// Boards with an on-board SPI receiver exist for this MCU, so generic
+// (non-config) builds include the SPI RX drivers. Disable with ENABLE_RX_SPI=0.
+#if !defined(ENABLE_RX_SPI)
+#define ENABLE_RX_SPI 1
 #endif

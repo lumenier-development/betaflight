@@ -1055,8 +1055,12 @@ static void osdElementCrosshairs(osdElementParms_t *element)
 
 static void osdElementCurrentDraw(osdElementParms_t *element)
 {
-    const float amperage = fabsf(getAmperage() / 100.0f);
-    osdPrintFloat(element->buff, SYM_NONE, amperage, "%3u", 2, false, SYM_AMP);
+    const int32_t amperage = getAmperage();
+    char *format = "%3u";
+    if (amperage < 0) {
+        format = (amperage > -1000) ? " -%u" : "-%2u";
+    }
+    osdPrintFloat(element->buff, SYM_NONE, abs(amperage) / 100.0f, format, 2, false, SYM_AMP);
 }
 
 static void osdElementDebug(osdElementParms_t *element)
@@ -1746,7 +1750,7 @@ static void osdElementMotorDiagnostics(osdElementParms_t *element)
     const bool motorsRunning = areMotorsRunning();
     for (; i < getMotorCount(); i++) {
         if (motorsRunning) {
-            element->buff[i] =  0x88 - scaleRange(motor[i], getMotorOutputLow(), getMotorOutputHigh(), 0, 8);
+            element->buff[i] =  SYM_AH_BAR9_8 - scaleRange(motor[i], getMotorOutputLow(), getMotorOutputHigh(), 0, 8);
 #if defined(USE_ESC_SENSOR) || defined(USE_DSHOT_TELEMETRY)
             if (getEscRpm(i) < MOTOR_STOPPED_THRESHOLD_RPM) {
                 // Motor is not spinning properly. Mark as Stopped
@@ -1754,7 +1758,7 @@ static void osdElementMotorDiagnostics(osdElementParms_t *element)
             }
 #endif
         } else {
-            element->buff[i] =  0x88;
+            element->buff[i] = SYM_AH_BAR9_8;
         }
     }
     element->buff[i] = '\0';

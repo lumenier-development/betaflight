@@ -17,14 +17,12 @@
 
 #pragma once
 
-#define MAVLINK_COMM_NUM_BUFFERS 2
 #define RSSI_DBM_MIN (-130)
 #define RSSI_DBM_MAX 0
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-function"
-#include "common/mavlink.h"
-#pragma GCC diagnostic pop
+#if defined(USE_SERIALRX_MAVLINK) || defined(USE_TELEMETRY_MAVLINK)
+#include "telemetry/mavlink_lib.h"
+#endif
 
 bool mavlinkRxInit(const rxConfig_t *initialRxConfig, rxRuntimeState_t *rxRuntimeState);
 #if defined(USE_SERIALRX_MAVLINK)

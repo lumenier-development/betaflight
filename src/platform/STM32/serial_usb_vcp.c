@@ -99,7 +99,13 @@ static void usbVcpSetBaudRateCb(serialPort_t *instance, void (*cb)(serialPort_t 
 static bool isUsbVcpTransmitBufferEmpty(const serialPort_t *instance)
 {
     UNUSED(instance);
-    return true;
+    static usbVcpTxDrain_t txDrain;
+
+    if (!(usbIsConnected() && usbIsConfigured())) {
+        // Nothing will drain the ring; don't make callers wait on it.
+        return true;
+    }
+    return usbVcpTxDrained(&txDrain, CDC_Send_BytesPending(), USB_TIMEOUT);
 }
 
 static uint32_t usbVcpAvailable(const serialPort_t *instance)
@@ -303,6 +309,13 @@ uint8_t usbVcpIsActive(void)
     // Unplugging stops the SOFs, which suspends the device out of USBD_STATE_CONFIGURED.
     // usbIsConnected() alone cannot see this: without VBUS sensing there is no disconnect
     // interrupt, so the state never returns to USBD_STATE_DEFAULT.
+#if defined(STM32F4)
+    // F4 only updates the state usbIsConfigured() reads on enumeration or reset, so a pulled cable
+    // keeps looking configured; the OTG core does track the bus idle that a pulled cable causes.
+    if (USB_OTG_dev.dev.device_status != USB_OTG_CONFIGURED) {
+        return 0;
+    }
+#endif
     return usbIsConnected() && usbIsConfigured();
 }
 #endif

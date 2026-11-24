@@ -218,16 +218,15 @@ void positionNavSetAccelLimits(float maxAccelMps2, float maxDecelMps2)
 float g_lastApproachDecelMps2;
 float g_lastApproachStillRadiusM;
 
-void positionNavSetApproachBrake(float decelMps2, float stillRadiusM)
+void positionNavSetApproachDecel(float decelMps2, float stillRadiusM)
 {
     g_lastApproachDecelMps2 = decelMps2;
     g_lastApproachStillRadiusM = stillRadiusM;
 }
 
-float positionNavApproachSpeedMps(float cruiseSpeedMps, float decelMps2, float stillRadiusM, float distM)
+float positionNavApproachSpeedMps(float cruiseSpeedMps, float decelMps2, float distM)
 {
-    const float gapM = fmaxf(distM - stillRadiusM, 0.0f);
-    const float speedMps = (gapM <= decelMps2) ? gapM : sqrtf(decelMps2 * (2.0f * gapM - decelMps2));
+    const float speedMps = (distM <= decelMps2) ? distM : sqrtf(2.0f * decelMps2 * distM - sq(decelMps2));
     return fminf(cruiseSpeedMps, speedMps);
 }
 
@@ -664,6 +663,54 @@ TEST_F(FlightPlanNavTest, ShortHoldAcrossMicrosWrapExpiresNormally)
 
     g_stubMicros += 500'000;
     flightPlanNavUpdate(g_stubMicros);
+    EXPECT_EQ(flightPlanNavGetState(), FP_NAV_TARGETING);
+}
+
+TEST_F(FlightPlanNavTest, TimedFlybyHoldsBeforeAdvancing)
+{
+    addWaypoint(10, 20, 15000, WAYPOINT_TYPE_FLYBY, 0, 100 /* 10 s */);
+    addWaypoint(30, 40, 15000, WAYPOINT_TYPE_FLYOVER);
+
+    g_stubMicros = 1'000'000;
+    flightPlanNavEngage();
+    ASSERT_NE(g_lastTarget.callback, nullptr); // duration disables pass-through
+    triggerReached();
+    EXPECT_EQ(flightPlanNavGetState(), FP_NAV_HOLDING);
+
+    g_stubMicros += 9'999'999;
+    flightPlanNavUpdate(g_stubMicros);
+    EXPECT_EQ(flightPlanNavGetState(), FP_NAV_HOLDING);
+
+    g_stubMicros += 1;
+    flightPlanNavUpdate(g_stubMicros);
+    EXPECT_EQ(flightPlanNavGetState(), FP_NAV_TARGETING);
+    EXPECT_EQ(flightPlanNavGetCurrentIndex(), 1);
+}
+
+TEST_F(FlightPlanNavTest, TimedFlyoverHoldsBeforeAdvancing)
+{
+    addWaypoint(10, 20, 15000, WAYPOINT_TYPE_FLYOVER, 0, 50 /* 5 s */);
+    addWaypoint(30, 40, 15000, WAYPOINT_TYPE_FLYOVER);
+
+    g_stubMicros = 1'000'000;
+    flightPlanNavEngage();
+    ASSERT_NE(g_lastTarget.callback, nullptr);
+    triggerReached();
+    EXPECT_EQ(flightPlanNavGetState(), FP_NAV_HOLDING);
+
+    g_stubMicros += 5'000'000;
+    flightPlanNavUpdate(g_stubMicros);
+    EXPECT_EQ(flightPlanNavGetState(), FP_NAV_TARGETING);
+    EXPECT_EQ(flightPlanNavGetCurrentIndex(), 1);
+}
+
+TEST_F(FlightPlanNavTest, ZeroDurationFlybyStillPassesThrough)
+{
+    addWaypoint(10, 20, 15000, WAYPOINT_TYPE_FLYBY, 0, 0);
+    addWaypoint(30, 40, 15000, WAYPOINT_TYPE_FLYOVER);
+
+    flightPlanNavEngage();
+    EXPECT_EQ(g_lastTarget.callback, nullptr);
     EXPECT_EQ(flightPlanNavGetState(), FP_NAV_TARGETING);
 }
 

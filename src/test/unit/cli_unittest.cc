@@ -66,10 +66,17 @@ extern "C" {
     int cliGetSettingIndex(char *name, uint8_t length);
     void *cliGetValuePointer(const clivalue_t *value);
 
+    typedef struct unitTest32_s {
+        uint32_t u32;
+        int32_t i32;
+    } unitTest32_t;
+
     const clivalue_t valueTable[] = {
         { .name = "array_unit_test",   .type = VAR_INT8  | MODE_ARRAY  | MASTER_VALUE, .config = { .array = { .length = 3}},                     .pgn = PG_RESERVED_FOR_TESTING_1, .offset = 0 },
         { .name = "str_unit_test",     .type = VAR_UINT8 | MODE_STRING | MASTER_VALUE, .config = { .string = { 0, 16, 0 }},                      .pgn = PG_RESERVED_FOR_TESTING_1, .offset = 0 },
         { .name = "wos_unit_test",     .type = VAR_UINT8 | MODE_STRING | MASTER_VALUE, .config = { .string = { 0, 16, STRING_FLAGS_WRITEONCE }}, .pgn = PG_RESERVED_FOR_TESTING_1, .offset = 0 },
+        { .name = "u32_unit_test",     .type = VAR_UINT32 | MODE_DIRECT | MASTER_VALUE, .config = { .u32Max = UINT32_MAX },                     .pgn = PG_RESERVED_FOR_TESTING_2, .offset = offsetof(unitTest32_t, u32) },
+        { .name = "i32_unit_test",     .type = VAR_INT32  | MODE_DIRECT | MASTER_VALUE, .config = { .d32Max = 1000000 },                        .pgn = PG_RESERVED_FOR_TESTING_2, .offset = offsetof(unitTest32_t, i32) },
     };
     const uint16_t valueTableEntryCount = ARRAYLEN(valueTable);
     const lookupTableEntry_t lookupTables[] = {};
@@ -108,6 +115,7 @@ extern "C" {
     PG_REGISTER(gpsRescueConfig_t, gpsRescueConfig, PG_GPS_RESCUE, 0);
 
     PG_REGISTER_WITH_RESET_FN(int8_t, unitTestData, PG_RESERVED_FOR_TESTING_1, 0);
+    PG_REGISTER(unitTest32_t, unitTest32Data, PG_RESERVED_FOR_TESTING_2, 0);
 }
 
 #include "unittest_macros.h"
@@ -266,6 +274,11 @@ unsigned serialGetPortClaims(serialPortIdentifier_e identifier, serialPortClaim_
     return 0;
 }
 
+uint32_t serialFunctionMaskFromLegacy(uint32_t legacyMask)
+{
+    return legacyMask;
+}
+
 bool serialApplyFunctionMask(serialPortIdentifier_e identifier, uint32_t mask)
 {
     (void)identifier;
@@ -355,7 +368,7 @@ void beeperOffSet(uint32_t) {}
 void beeperOffClear(uint32_t) {}
 void beeperOffClearAll(void) {}
 bool parseColor(int, const char *) {return false; }
-bool resetEEPROM(void) { return true; }
+bool resetEEPROM(configResetReason_e, uint16_t) { return true; }
 void bufWriterFlush(bufWriter_t *) {}
 void mixerResetDisarmedMotors(void) {}
 
@@ -419,7 +432,24 @@ const char * const shortGitRevision = "MASTER";
 //uint32_t serialRxBytesWaiting(const serialPort_t *) {return 0;}
 //uint8_t serialRead(serialPort_t *){return 0;}
 
-void bufWriterAppend(bufWriter_t *, uint8_t ch){ printf("%c", ch); }
+// Keep the CLI output, so that tests can examine the messages.
+static char cliOutput[256];
+static unsigned cliOutputLen = 0;
+
+static void cliOutputReset(void)
+{
+    cliOutputLen = 0;
+    cliOutput[0] = '\0';
+}
+
+void bufWriterAppend(bufWriter_t *, uint8_t ch)
+{
+    printf("%c", ch);
+    if (cliOutputLen < sizeof(cliOutput) - 1) {
+        cliOutput[cliOutputLen++] = ch;
+        cliOutput[cliOutputLen] = '\0';
+    }
+}
 //void serialWriteBufShim(void *, const uint8_t *, int) {}
 void bufWriterInit(bufWriter_t *, uint8_t *, int, bufWrite_t, void *) { }
 //void setArmingDisabled(armingDisableFlags_e) {}
@@ -608,6 +638,66 @@ TEST(CLIUnittest, TestCliExecuteCommandRefusesWhenArmed)
     armingFlags &= ~ARMED;
     EXPECT_FALSE(cliMode);
 }
+
+// atoi("-1") gives -1. A check of only the upper limit let 'aux -1' write before the start
+// of the array. A negative index must give the index range error.
+TEST(CLIUnittest, TestCliAuxRejectsNegativeIndex)
+{
+    static_assert(MAX_MODE_ACTIVATION_CONDITION_COUNT == 20, "update the aux index tests");
+    char buf[64];
+
+    // Without the other arguments, the command clears the entry with memset()
+    cliOutputReset();
+    cliExecuteCommand("aux -1", buf, sizeof(buf));
+    EXPECT_NE(nullptr, strstr(cliOutput, "INDEX NOT BETWEEN"));
+
+    cliOutputReset();
+    cliExecuteCommand("aux -1 0 1 1700 2100 0 0", buf, sizeof(buf));
+    EXPECT_NE(nullptr, strstr(cliOutput, "INDEX NOT BETWEEN"));
+
+    cliOutputReset();
+    cliExecuteCommand("aux 20 0 1 1700 2100 0 0", buf, sizeof(buf));
+    EXPECT_NE(nullptr, strstr(cliOutput, "INDEX NOT BETWEEN"));
+
+    // The last index is valid
+    cliOutputReset();
+    cliExecuteCommand("aux 19 0 1 1700 2100 0 0", buf, sizeof(buf));
+    EXPECT_EQ(nullptr, strstr(cliOutput, "INDEX NOT BETWEEN"));
+    EXPECT_EQ(1, modeActivationConditions(19)->auxChannelIndex);
+
+    memset(modeActivationConditionsMutable(19), 0, sizeof(modeActivationCondition_t));
+    EXPECT_FALSE(cliMode);
+}
+
+// Same problem as 'aux': 'adjrange -1' wrote before the start of the array.
+TEST(CLIUnittest, TestCliAdjrangeRejectsNegativeIndex)
+{
+    static_assert(MAX_ADJUSTMENT_RANGE_COUNT == 30, "update the adjrange index tests");
+    char buf[64];
+
+    // Without the other arguments, the command clears the entry with memset()
+    cliOutputReset();
+    cliExecuteCommand("adjrange -1", buf, sizeof(buf));
+    EXPECT_NE(nullptr, strstr(cliOutput, "INDEX NOT BETWEEN"));
+
+    cliOutputReset();
+    cliExecuteCommand("adjrange -1 0 1 1700 2100 1 2", buf, sizeof(buf));
+    EXPECT_NE(nullptr, strstr(cliOutput, "INDEX NOT BETWEEN"));
+
+    cliOutputReset();
+    cliExecuteCommand("adjrange 30 0 1 1700 2100 1 2", buf, sizeof(buf));
+    EXPECT_NE(nullptr, strstr(cliOutput, "INDEX NOT BETWEEN"));
+
+    // The last index is valid
+    cliOutputReset();
+    cliExecuteCommand("adjrange 29 0 1 1700 2100 1 2", buf, sizeof(buf));
+    EXPECT_EQ(nullptr, strstr(cliOutput, "INDEX NOT BETWEEN"));
+    EXPECT_EQ(1, adjustmentRanges(29)->auxChannelIndex);
+    EXPECT_EQ(2, adjustmentRanges(29)->auxSwitchChannelIndex);
+
+    memset(adjustmentRangesMutable(29), 0, sizeof(adjustmentRange_t));
+    EXPECT_FALSE(cliMode);
+}
 #endif
 
 // Verifies cliSetSettingByName sets an array value and round-trips via get.
@@ -678,6 +768,68 @@ TEST(CLIUnittest, TestSetSettingByNameEmptyValue)
 {
     bool result = cliSetSettingByName("array_unit_test = ");
     EXPECT_FALSE(result);
+}
+
+static uint32_t getUnitTestU32(void)
+{
+    const uint16_t index = cliGetSettingIndex((char *)"u32_unit_test", 13);
+    return *(uint32_t *)cliGetValuePointer(&valueTable[index]);
+}
+
+static int32_t getUnitTestI32(void)
+{
+    const uint16_t index = cliGetSettingIndex((char *)"i32_unit_test", 13);
+    return *(int32_t *)cliGetValuePointer(&valueTable[index]);
+}
+
+// Verifies cliSetSettingByName accepts the full uint32 range and rejects
+// values that do not fit, without wrapping or saturating.
+TEST(CLIUnittest, TestSetSettingByNameUint32)
+{
+    EXPECT_TRUE(cliSetSettingByName("u32_unit_test = 4294967295"));
+    EXPECT_EQ(4294967295u, getUnitTestU32());
+
+    EXPECT_TRUE(cliSetSettingByName("u32_unit_test = 0"));
+    EXPECT_EQ(0u, getUnitTestU32());
+
+    EXPECT_TRUE(cliSetSettingByName("u32_unit_test = +7"));
+    EXPECT_EQ(7u, getUnitTestU32());
+
+    EXPECT_FALSE(cliSetSettingByName("u32_unit_test = 4294967296"));
+    EXPECT_FALSE(cliSetSettingByName("u32_unit_test = 99999999999999999999"));
+    EXPECT_FALSE(cliSetSettingByName("u32_unit_test = -1"));
+    EXPECT_FALSE(cliSetSettingByName("u32_unit_test = 12a"));
+    EXPECT_FALSE(cliSetSettingByName("u32_unit_test = 0x10"));
+    EXPECT_FALSE(cliSetSettingByName("u32_unit_test = 1 2"));
+    EXPECT_FALSE(cliSetSettingByName("u32_unit_test = +"));
+    EXPECT_EQ(7u, getUnitTestU32());
+}
+
+// Verifies cliSetSettingByName enforces +/-d32Max for int32 settings and
+// rejects values that overflow 32 bits.
+TEST(CLIUnittest, TestSetSettingByNameInt32)
+{
+    EXPECT_TRUE(cliSetSettingByName("i32_unit_test = 1000000"));
+    EXPECT_EQ(1000000, getUnitTestI32());
+
+    EXPECT_TRUE(cliSetSettingByName("i32_unit_test = -1000000"));
+    EXPECT_EQ(-1000000, getUnitTestI32());
+
+    EXPECT_TRUE(cliSetSettingByName("i32_unit_test = +5"));
+    EXPECT_EQ(5, getUnitTestI32());
+
+    EXPECT_TRUE(cliSetSettingByName("i32_unit_test = -0"));
+    EXPECT_EQ(0, getUnitTestI32());
+
+    EXPECT_FALSE(cliSetSettingByName("i32_unit_test = 1000001"));
+    EXPECT_FALSE(cliSetSettingByName("i32_unit_test = -1000001"));
+    EXPECT_FALSE(cliSetSettingByName("i32_unit_test = 4294967296"));
+    EXPECT_FALSE(cliSetSettingByName("i32_unit_test = -4294967296"));
+    EXPECT_FALSE(cliSetSettingByName("i32_unit_test = 99999999999999999999"));
+    EXPECT_FALSE(cliSetSettingByName("i32_unit_test = -"));
+    EXPECT_FALSE(cliSetSettingByName("i32_unit_test = --5"));
+    EXPECT_FALSE(cliSetSettingByName("i32_unit_test = 5-"));
+    EXPECT_EQ(0, getUnitTestI32());
 }
 
 // Verifies cliSetSettingByName handles extra whitespace around '='.

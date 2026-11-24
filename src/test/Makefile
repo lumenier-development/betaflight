@@ -46,6 +46,7 @@ althold_unittest_SRC := \
 
 althold_unittest_DEFINES := \
 		USE_ALTITUDE_HOLD= \
+		ENABLE_FLIGHT_PLAN=1
 
 autopilot_wing_unittest_SRC := \
 		$(USER_DIR)/flight/autopilot_wing.c \
@@ -118,6 +119,43 @@ compass_ist8310_unittest_SRC := \
 compass_ist8310_unittest_DEFINES := \
                 USE_MAG_IST8310=
 
+flash_fm25v02a_unittest_SRC := \
+		$(USER_DIR)/drivers/flash/flash_fm25v02a.c \
+		$(USER_DIR)/drivers/flash/flash.c
+
+flash_fm25v02a_unittest_DEFINES := \
+		USE_FLASH_CHIP= \
+		USE_FLASH_SPI= \
+		USE_FLASH_M25P16= \
+		USE_FLASH_FM25V02A=
+
+flash_w25n_quadspi_unittest_SRC := \
+		$(USER_DIR)/drivers/flash/flash_w25n.c \
+		$(USER_DIR)/drivers/flash/flash.c \
+		$(USER_DIR)/io/flashfs.c
+
+flash_w25n_quadspi_unittest_DEFINES := \
+		USE_FLASH_CHIP= \
+		USE_FLASHFS= \
+		USE_FLASH_SPI= \
+		USE_QUADSPI= \
+		USE_FLASH_QUADSPI= \
+		USE_FLASH_W25N= \
+		USE_FLASH_W25N01G=
+
+flash_w25q128fv_quadspi_unittest_SRC := \
+		$(USER_DIR)/drivers/flash/flash_w25q128fv.c \
+		$(USER_DIR)/drivers/flash/flash.c \
+		$(USER_DIR)/io/flashfs.c
+
+flash_w25q128fv_quadspi_unittest_DEFINES := \
+		USE_FLASH_CHIP= \
+		USE_FLASHFS= \
+		USE_FLASH_SPI= \
+		USE_QUADSPI= \
+		USE_FLASH_QUADSPI= \
+		USE_FLASH_W25Q128FV=
+
 baro_bmp085_unittest_SRC := \
 		$(USER_DIR)/drivers/barometer/barometer_bmp085.c
 
@@ -168,6 +206,14 @@ accgyro_spi_icm426xx_unittest_DEFINES := \
                 USE_ACCGYRO_IIM42652= \
                 USE_ACCGYRO_IIM42653=
 
+accgyro_spi_icm456xx_unittest_SRC := \
+		$(USER_DIR)/drivers/accgyro/accgyro_spi_icm456xx.c
+
+accgyro_spi_icm456xx_unittest_DEFINES := \
+                USE_DMA= \
+                USE_ACCGYRO_ICM45686= \
+                USE_ACCGYRO_ICM45605=
+
 accgyro_spi_lsm6dsv16x_unittest_SRC := \
 		$(USER_DIR)/drivers/accgyro/accgyro_spi_lsm6dsv16x.c
 
@@ -187,6 +233,26 @@ accgyro_spi_lsm6dsv16x_unittest_DEFINES = \
 #battery_unittest_SRC := \
 #		$(USER_DIR)/sensors/battery.c \
 #		$(USER_DIR)/common/maths.c
+
+bus_i2c_busdev_unittest_SRC := \
+		$(USER_DIR)/drivers/bus_i2c_busdev.c
+
+bus_i2c_busdev_unittest_DEFINES := \
+		USE_I2C= \
+		I2CDEV_COUNT=3
+
+bus_spi_unittest_SRC := \
+		$(USER_DIR)/build/atomic.c \
+		$(USER_DIR)/drivers/bus_spi.c \
+		$(USER_DIR)/drivers/accgyro/accgyro_mpu.c
+
+bus_spi_unittest_DEFINES := \
+		USE_SPI= \
+		USE_SPI_DEVICE_1= \
+		USE_SPI_GYRO= \
+		SPI1=0x40013000UL \
+		SPIDEV_COUNT=1 \
+		MAX_SPI_PIN_SEL=1
 
 battery_profile_unittest_SRC := \
 		$(USER_DIR)/sensors/battery.c \
@@ -248,6 +314,9 @@ common_filter_unittest_SRC := \
 
 debug_annotations_unittest_SRC := \
 		$(USER_DIR)/build/debug.c
+
+dshot_bitbang_frame_unittest_SRC := \
+		$(USER_DIR)/common/time.c
 
 dyn_notch_filter_unittest_SRC := \
         $(USER_DIR)/flight/dyn_notch_filter.c \
@@ -388,6 +457,13 @@ motor_output_unittest_SRC := \
 motor_output_unittest_DEFINES := \
 		USE_DSHOT=
 
+sdcard_sdio_unittest_SRC := \
+		$(USER_DIR)/drivers/sdcard_sdio_baremetal.c
+
+sdcard_sdio_unittest_DEFINES := \
+		USE_SDCARD_SDIO= \
+		ENABLE_SDIO_EXTERNAL_DMA=0
+
 msp_serial_unittest_SRC := \
 		$(USER_DIR)/msp/msp_serial.c \
 		$(USER_DIR)/common/crc.c \
@@ -398,6 +474,11 @@ msp_serial_unittest_DEFINES := \
 		USE_MSP_DISPLAYPORT= \
 		USE_RANGEFINDER_MT= \
 		USE_OPTICALFLOW_MT=
+
+msp_serial_no_bootloader_unittest_SRC := $(msp_serial_unittest_SRC)
+msp_serial_no_bootloader_unittest_DEFINES := \
+		$(msp_serial_unittest_DEFINES) \
+		PLATFORM_SUPPORTS_SOFTWARE_BOOTLOADER=0
 
 msp_reboot_unittest_SRC := \
 		$(USER_DIR)/fc/runtime_config.c \
@@ -571,6 +652,16 @@ serial_feature_map_unittest_DEFINES := \
 		USE_TELEMETRY_MAVLINK= \
 		USE_TELEMETRY_IBUS=
 
+# The same map as a cloud build without the VTX option compiles it.
+serial_feature_map_novtx_unittest_SRC := \
+		$(USER_DIR)/io/serial_feature_map.c
+
+serial_feature_map_novtx_unittest_DEFINES := \
+		USE_GPS= \
+		USE_SERIALRX= \
+		USE_OSD= \
+		USE_MSP_DISPLAYPORT=
+
 sensor_gyro_unittest_SRC := \
 		$(USER_DIR)/sensors/gyro.c \
 		$(USER_DIR)/sensors/gyro_init.c \
@@ -595,6 +686,12 @@ sitl_gyro_unittest_SRC := \
 		$(TEST_DIR)/sitl_gyro_unittest_c.c
 
 sitl_gyro_unittest_INCLUDE_DIRS := \
+		$(ROOT)/src/platform/SIMULATOR
+
+sitl_rate_unittest_SRC := \
+		$(TEST_DIR)/sitl_rate_unittest_c.c
+
+sitl_rate_unittest_INCLUDE_DIRS := \
 		$(ROOT)/src/platform/SIMULATOR
 
 telemetry_crsf_unittest_SRC := \
@@ -640,12 +737,21 @@ telemetry_hott_unittest_SRC := \
 		$(USER_DIR)/common/gps_conversion.c
 
 
+telemetry_frsky_hub_unittest_SRC := \
+		$(USER_DIR)/telemetry/frsky_hub.c
+
+telemetry_frsky_hub_unittest_DEFINES := \
+		USE_TELEMETRY= \
+		USE_TELEMETRY_FRSKY_HUB=
+
+
 telemetry_ibus_unittest_SRC := \
 		$(USER_DIR)/telemetry/ibus_shared.c \
 		$(USER_DIR)/telemetry/ibus.c
 
 telemetry_mavlink_mission_unittest_SRC := \
 		$(USER_DIR)/telemetry/mavlink_mission.c \
+		$(USER_DIR)/telemetry/mavlink_helpers.c \
 		$(USER_DIR)/pg/flight_plan.c \
 		$(USER_DIR)/pg/autopilot.c
 
@@ -659,6 +765,7 @@ telemetry_mavlink_mission_unittest_DEFINES := \
 
 telemetry_mavlink_mission_wing_unittest_SRC := \
 		$(USER_DIR)/telemetry/mavlink_mission.c \
+		$(USER_DIR)/telemetry/mavlink_helpers.c \
 		$(USER_DIR)/pg/flight_plan.c \
 		$(USER_DIR)/pg/autopilot.c
 
@@ -754,6 +861,9 @@ pid_unittest_DEFINES := \
 		USE_LAUNCH_CONTROL= \
 		USE_FEEDFORWARD= \
 		USE_ADVANCED_TPA= \
+		USE_GPS_RESCUE= \
+		ENABLE_FLIGHT_PLAN=1 \
+		ENABLE_RESCUE_PLAN=1
 
 position_rescue_geometry_unittest_SRC := \
 		$(USER_DIR)/common/maths.c
@@ -872,6 +982,21 @@ flight_plan_capture_unittest_DEFINES := \
 		USE_FLIGHT_PLAN= \
 		ENABLE_FLIGHT_PLAN=1
 
+gps_rescue_multirotor_unittest_SRC := \
+		$(USER_DIR)/flight/gps_rescue_multirotor.c \
+		$(USER_DIR)/fc/runtime_config.c \
+		$(USER_DIR)/common/crc.c \
+		$(USER_DIR)/common/maths.c \
+		$(USER_DIR)/common/streambuf.c \
+		$(USER_DIR)/common/vector.c \
+		$(USER_DIR)/pg/autopilot.c \
+		$(USER_DIR)/pg/gps_rescue_multirotor.c \
+		$(USER_DIR)/pg/pg.c
+
+gps_rescue_multirotor_unittest_DEFINES := \
+		USE_GPS= \
+		USE_GPS_RESCUE=
+
 flight_plan_rescue_unittest_SRC := \
 		$(USER_DIR)/flight/flight_plan_nav.c \
 		$(USER_DIR)/pg/autopilot.c \
@@ -907,6 +1032,7 @@ osd_nav_map_unittest_DEFINES := \
 
 mavlink_mission_unittest_SRC := \
 		$(USER_DIR)/telemetry/mavlink_mission.c \
+		$(USER_DIR)/telemetry/mavlink_helpers.c \
 		$(USER_DIR)/pg/autopilot.c \
 		$(USER_DIR)/pg/flight_plan.c
 
@@ -919,6 +1045,9 @@ mavlink_mission_unittest_DEFINES := \
 
 rcdevice_unittest_DEFINES := \
 		USE_RCDEVICE=
+
+usb_vcp_tx_drain_unittest_SRC := \
+		$(TEST_DIR)/usb_vcp_tx_drain_test_support.c
 
 vtx_unittest_SRC := \
 		$(USER_DIR)/fc/core.c \
@@ -1004,8 +1133,32 @@ vtx_msp_unittest_DEFINES := \
 		USE_VTX_TABLE= \
 		USE_VTX_MSP=
 
+um32_uart_bidir_unittest_SRC := \
+        $(TEST_DIR)/um32_uart_bidir_test.c \
+        $(USER_DIR)/drivers/serial_impl.c
+
+um32_uart_bidir_unittest_INCLUDE_DIRS := \
+        $(TEST_DIR)/um32_uart_bidir \
+        ../platform/UM32/include
+
+um32_uart_bidir_unittest_DEFINES = \
+        $(if $(findstring nopulldown,$1),USE_SMARTAUDIO_NOPULLDOWN=) \
+        $(if $(findstring no_board_bias,$1),UM32_UART_BIDIR_NO_BOARD_PULLUP=)
+
+um32_adc_unittest_SRC := \
+        $(TEST_DIR)/um32_adc_test.c \
+        $(USER_DIR)/drivers/dma.c \
+        $(USER_DIR)/drivers/resource.c
+
+um32_adc_unittest_INCLUDE_DIRS := \
+        $(TEST_DIR)/um32_adc \
+        ../platform/common/stm32
+
 pwl_unittest_SRC := \
 		$(USER_DIR)/common/pwl.c
+
+uvarint_unittest_SRC := \
+		$(USER_DIR)/common/uvarint.c
 
 # Please tweak the following variable definitions as needed by your
 # project, except GTEST_HEADERS, which you can use in your own targets
@@ -1052,7 +1205,7 @@ COMMON_FLAGS += -Wno-c99-designator
 # no warning expected on clang
 COMMON_FLAGS += -Werror
 
-# The vendored MAVLink headers forward-declare mavlink_message_t and then
+# The MAVLink headers forward-declare mavlink_message_t and then
 # redefine it identically; harmless, but flagged as a C11 feature under gnu99.
 COMMON_FLAGS += -Wno-typedef-redefinition
 
@@ -1124,6 +1277,7 @@ TESTS_TARGET_SPECIFIC = $(foreach test,$(TEST_BASENAMES),$(if $($(test)_EXPAND),
 
 TESTS = $(foreach test,$(TEST_BASENAMES),$(if $($(test)_EXPAND),,$(test)))
 TESTS += $(addprefix accgyro_spi_lsm6dsv16x_unittest.,16x 32x 320x)
+TESTS += $(addprefix um32_uart_bidir_unittest.,nopulldown no_board_bias no_board_bias_nopulldown)
 TESTS_ALL = $(TESTS)
 
 # All Google Test headers.  Usually you shouldn't change this
@@ -1217,7 +1371,22 @@ $(OBJECT_DIR)/gtest_main.a : $(OBJECT_DIR)/gtest-all.o $(OBJECT_DIR)/gtest_main.
 
 # includes in test dir must override includes in user dir, unless the user
 # specifies a list of endorsed directories in ${target}_INCLUDE_DIRS.
-test_include_dirs  = $1 $(TEST_DIR) $(USER_DIR) $(ROOT)/lib/main/MAVLink
+MAVLINK_LIB_DIR := $(ROOT)/lib/modules/mavlink
+CH32_LIB_DIR := $(ROOT)/lib/modules/CH32H41x
+
+# The MAVLink library is a submodule the firmware Makefile hydrates on demand;
+# hydrate it here too so tests built from this directory find its headers.
+$(MAVLINK_LIB_DIR)/.git:
+	git -C $(ROOT) submodule update --init -- lib/modules/mavlink
+
+$(CH32_LIB_DIR)/.git:
+	git -C $(ROOT) submodule update --init --checkout -- lib/modules/CH32H41x
+
+.PHONY: test-ch32
+test-ch32: | $(CH32_LIB_DIR)/.git
+	$(V1) python3 -B ch32h415/regression.py
+
+test_include_dirs  = $1 $(TEST_DIR) $(USER_DIR) $(MAVLINK_LIB_DIR)
 test_cflags	   = $(addprefix -I,$(call test_include_dirs,$1))
 
 
@@ -1264,14 +1433,14 @@ endif
 -include $$($1_OBJS:.o=.d)
 -include $(OBJECT_DIR)/$1/$(basename $1).d
 
-$(OBJECT_DIR)/$1/%.c.o: $(USER_DIR)/%.c
+$(OBJECT_DIR)/$1/%.c.o: $(USER_DIR)/%.c | $(MAVLINK_LIB_DIR)/.git
 	@echo "compiling $$<" "$(STDOUT)"
 	$(V1) mkdir -p $$(dir $$@)
 	$(V1) $(CC) $(C_FLAGS) $($1_C_FLAGS) $$(call test_cflags,$$($1_INCLUDE_DIRS)) \
                 $$(foreach def,$$($1_DEFINES),-D $$(def)) \
                 -c $$< -o $$@
 
-$(OBJECT_DIR)/$1/%.c.o: $(TEST_DIR)/%.c
+$(OBJECT_DIR)/$1/%.c.o: $(TEST_DIR)/%.c | $(MAVLINK_LIB_DIR)/.git
 	@echo "compiling test c file: $$<" "$(STDOUT)"
 	$(V1) mkdir -p $$(dir $$@)
 	$(V1) $(CC) $(C_FLAGS) $($1_C_FLAGS) $$(call test_cflags,$$($1_INCLUDE_DIRS)) \
@@ -1280,7 +1449,7 @@ $(OBJECT_DIR)/$1/%.c.o: $(TEST_DIR)/%.c
 
 ifneq ($1,$(basename $1))
 # per-target tests may compile files from the target directory
-$(OBJECT_DIR)/$1/%.c.o: $(TARGET_DIR)/$(TARGET)/%.c
+$(OBJECT_DIR)/$1/%.c.o: $(TARGET_DIR)/$(TARGET)/%.c | $(MAVLINK_LIB_DIR)/.git
 	@echo "compiling target c file: $$<" "$(STDOUT)"
 	$(V1) mkdir -p $$(dir $$@)
 	$(V1) $(CC) $(C_FLAGS) $($1_C_FLAGS) $$(call test_cflags,$$($1_INCLUDE_DIRS)) \
@@ -1288,7 +1457,7 @@ $(OBJECT_DIR)/$1/%.c.o: $(TARGET_DIR)/$(TARGET)/%.c
                 -c $$< -o $$@
 endif
 
-$(OBJECT_DIR)/$1/$(basename $1).o: $(TEST_DIR)/$(basename $1).cc
+$(OBJECT_DIR)/$1/$(basename $1).o: $(TEST_DIR)/$(basename $1).cc | $(MAVLINK_LIB_DIR)/.git
 	@echo "compiling $$<" "$(STDOUT)"
 	$(V1) mkdir -p $$(dir $$@)
 	$(V1) $(CXX) $(CXX_FLAGS) $$(call test_cflags,$$($1_INCLUDE_DIRS)) \

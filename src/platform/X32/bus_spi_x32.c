@@ -62,6 +62,11 @@ FAST_IRQ_HANDLER static void spiRxIrqHandler(dmaChannelDescriptor_t *descriptor)
         return;
     }
 
+    if (DMA_GET_FLAG_STATUS(descriptor, DMA_IT_TEIF)) {
+        spiAbortTransfer(dev);
+        return;
+    }
+
     busDevice_t *bus = dev->bus;
 
     if (bus->curSegment->negateCS) {
@@ -151,9 +156,7 @@ static void spiApplyConfig(SPI_TypeDef *instance, uint16_t divisor, bool leading
     init.CLKPOL = leadingEdge ? SPI_CLKPOL_LOW : SPI_CLKPOL_HIGH;
     init.CLKPHA = leadingEdge ? SPI_CLKPHA_FIRST_EDGE : SPI_CLKPHA_SECOND_EDGE;
 
-    SPI_Enable(instance, DISABLE);
     SPI_Init(instance, &init);
-    SPI_I2S_EnableDma(instance, SPI_I2S_DMA_TX | SPI_I2S_DMA_RX, DISABLE);
     SPI_SSOutputEnable(instance, ENABLE);
     SPI_SetNssLevel(instance, SPI_NSS_HIGH);
     SPI_Enable(instance, ENABLE);
@@ -484,6 +487,15 @@ void spiInternalStopDMA(const extDevice_t *dev)
     if (dmaRx) {
         SPI_I2S_EnableDma(instance, SPI_I2S_DMA_RX, DISABLE);
     }
+
+    // An overrun discards everything received after it until cleared by reading DAT then STS
+    instance->DAT;
+    instance->STS;
+}
+
+void spiInternalAbortDMA(const extDevice_t *dev)
+{
+    spiInternalStopDMA(dev);
 }
 
 bool spiInternalReadWriteBufPolled(spiResource_t *resource, const uint8_t *txData, uint8_t *rxData, int len)

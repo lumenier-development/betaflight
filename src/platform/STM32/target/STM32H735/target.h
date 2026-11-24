@@ -90,10 +90,15 @@
 #define USE_ADC
 
 #define USE_EXTI
-#define USE_TIMER_UP_CONFIG
 
 #define FLASH_PAGE_SIZE ((uint32_t)0x20000) // 128K sectors
 
 #if defined(USE_LED_STRIP) && !defined(USE_LED_STRIP_CACHE_MGMT)
 #define USE_LED_STRIP_CACHE_MGMT
+#endif
+
+// Boards with an on-board SPI receiver exist for this MCU, so generic
+// (non-config) builds include the SPI RX drivers. Disable with ENABLE_RX_SPI=0.
+#if !defined(ENABLE_RX_SPI)
+#define ENABLE_RX_SPI 1
 #endif

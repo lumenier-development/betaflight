@@ -87,7 +87,7 @@ TEST_F(RcControlsModesTest, updateActivatedModesWithAllInputsAtMidde)
 
     // and
     for (int index = AUX1; index < MAX_SUPPORTED_RC_CHANNEL_COUNT; index++) {
-        rcData[index] = PWM_RANGE_MIDDLE;
+        rcData[index] = rcUsToNorm(PWM_RANGE_MIDDLE);
     }
 
     // when
@@ -107,13 +107,13 @@ TEST_F(RcControlsModesTest, isRangeActiveStepBoundaries)
 {
     const channelRange_t range = { 4, 44 };
 
-    rcData[AUX1] = 999.9f;
+    rcData[AUX1] = rcUsToNorm(999.9f);
     EXPECT_FALSE(isRangeActive(AUX1 - NON_AUX_CHANNEL_COUNT, &range));
-    rcData[AUX1] = 1000;
+    rcData[AUX1] = rcUsToNorm(1000);
     EXPECT_TRUE(isRangeActive(AUX1 - NON_AUX_CHANNEL_COUNT, &range));
-    rcData[AUX1] = 1999.9f;
+    rcData[AUX1] = rcUsToNorm(1999.9f);
     EXPECT_TRUE(isRangeActive(AUX1 - NON_AUX_CHANNEL_COUNT, &range));
-    rcData[AUX1] = 2000;
+    rcData[AUX1] = rcUsToNorm(2000);
     EXPECT_FALSE(isRangeActive(AUX1 - NON_AUX_CHANNEL_COUNT, &range));
 }
 
@@ -121,9 +121,9 @@ TEST_F(RcControlsModesTest, isRangeActiveOpenEndedBeyondChannelRange)
 {
     const channelRange_t range = { MIN_MODE_RANGE_STEP, MAX_MODE_RANGE_STEP };
 
-    rcData[AUX1] = 800;
+    rcData[AUX1] = rcUsToNorm(800);
     EXPECT_TRUE(isRangeActive(AUX1 - NON_AUX_CHANNEL_COUNT, &range));
-    rcData[AUX1] = 2200;
+    rcData[AUX1] = rcUsToNorm(2200);
     EXPECT_TRUE(isRangeActive(AUX1 - NON_AUX_CHANNEL_COUNT, &range));
 }
 
@@ -185,16 +185,16 @@ TEST_F(RcControlsModesTest, updateActivatedModesUsingValidAuxConfigurationAndRXV
 
     // and
     for (int index = AUX1; index < MAX_SUPPORTED_RC_CHANNEL_COUNT; index++) {
-        rcData[index] = PWM_RANGE_MIDDLE;
+        rcData[index] = rcUsToNorm(PWM_RANGE_MIDDLE);
     }
 
-    rcData[AUX1] = PWM_RANGE_MAX;
-    rcData[AUX2] = PWM_RANGE_MIDDLE;
-    rcData[AUX3] = PWM_RANGE_MIN;
-    rcData[AUX4] = PWM_RANGE_MAX;
-    rcData[AUX5] = 899; // value lower that range minimum should be treated the same as the lowest range value
-    rcData[AUX6] = 2101; // value higher than the range maximum should be treated the same as the highest range value
-    rcData[AUX7] = 950; // value equal to range step upper boundary should not activate the mode
+    rcData[AUX1] = rcUsToNorm(PWM_RANGE_MAX);
+    rcData[AUX2] = rcUsToNorm(PWM_RANGE_MIDDLE);
+    rcData[AUX3] = rcUsToNorm(PWM_RANGE_MIN);
+    rcData[AUX4] = rcUsToNorm(PWM_RANGE_MAX);
+    rcData[AUX5] = rcUsToNorm(899); // value lower that range minimum should be treated the same as the lowest range value
+    rcData[AUX6] = rcUsToNorm(2101); // value higher than the range maximum should be treated the same as the highest range value
+    rcData[AUX7] = rcUsToNorm(950); // value equal to range step upper boundary should not activate the mode
 
     // and
     boxBitmask_t activeBoxIds;
@@ -221,9 +221,10 @@ TEST_F(RcControlsModesTest, updateActivatedModesUsingValidAuxConfigurationAndRXV
 
 enum {
     COUNTER_QUEUE_CONFIRMATION_BEEP,
-    COUNTER_CHANGE_CONTROL_RATE_PROFILE
+    COUNTER_CHANGE_CONTROL_RATE_PROFILE,
+    COUNTER_CHANGE_PID_PROFILE
 };
-#define CALL_COUNT_ITEM_COUNT 2
+#define CALL_COUNT_ITEM_COUNT 3
 
 static int callCounts[CALL_COUNT_ITEM_COUNT];
 
@@ -243,6 +244,11 @@ void beeper(beeperMode_e mode)
 void changeControlRateProfile(uint8_t)
 {
     callCounts[COUNTER_CHANGE_CONTROL_RATE_PROFILE]++;
+}
+
+void changePidProfile(uint8_t)
+{
+    callCounts[COUNTER_CHANGE_PID_PROFILE]++;
 }
 
 }
@@ -287,21 +293,21 @@ TEST_F(RcControlsModesTest, updateActivatedModesBoxParalyzeLatchesForeverOnceAct
     rxRuntimeState.channelCount = MAX_SUPPORTED_RC_CHANNEL_COUNT - NON_AUX_CHANNEL_COUNT;
 
     for (int index = AUX1; index < MAX_SUPPORTED_RC_CHANNEL_COUNT; index++) {
-        rcData[index] = PWM_RANGE_MIDDLE;
+        rcData[index] = rcUsToNorm(PWM_RANGE_MIDDLE);
     }
 
     analyzeModeActivationConditions();
 
     // when: switch is in-range before the boot guard has ever seen it off
     resetMillis();
-    rcData[AUX1] = PWM_RANGE_MAX;
+    rcData[AUX1] = rcUsToNorm(PWM_RANGE_MAX);
     updateActivatedModes();
 
     // then: activation is withheld until the switch has been observed off
     EXPECT_FALSE(IS_RC_MODE_ACTIVE(BOXPARALYZE));
 
     // when: switch goes off and the boot delay elapses
-    rcData[AUX1] = PWM_RANGE_MIDDLE;
+    rcData[AUX1] = rcUsToNorm(PWM_RANGE_MIDDLE);
     fixedMillis = STICKY_MODE_BOOT_DELAY_US / 1000 + 1;
     updateActivatedModes();
 
@@ -309,14 +315,14 @@ TEST_F(RcControlsModesTest, updateActivatedModesBoxParalyzeLatchesForeverOnceAct
     EXPECT_FALSE(IS_RC_MODE_ACTIVE(BOXPARALYZE));
 
     // when: switch is moved into range
-    rcData[AUX1] = PWM_RANGE_MAX;
+    rcData[AUX1] = rcUsToNorm(PWM_RANGE_MAX);
     updateActivatedModes();
 
     // then: mode activates normally
     EXPECT_TRUE(IS_RC_MODE_ACTIVE(BOXPARALYZE));
 
     // when: switch is moved back out of range
-    rcData[AUX1] = PWM_RANGE_MIDDLE;
+    rcData[AUX1] = rcUsToNorm(PWM_RANGE_MIDDLE);
     updateActivatedModes();
 
     // then: BOXPARALYZE is a kill switch and must stay active until reboot
@@ -339,21 +345,21 @@ TEST_F(RcControlsModesTest, updateActivatedModesBoxBlackboxEraseDoesNotLatchFore
     rxRuntimeState.channelCount = MAX_SUPPORTED_RC_CHANNEL_COUNT - NON_AUX_CHANNEL_COUNT;
 
     for (int index = AUX1; index < MAX_SUPPORTED_RC_CHANNEL_COUNT; index++) {
-        rcData[index] = PWM_RANGE_MIDDLE;
+        rcData[index] = rcUsToNorm(PWM_RANGE_MIDDLE);
     }
 
     analyzeModeActivationConditions();
 
     // when: switch is in-range before RX has ever been seen off (rcData defaults, e.g. before RX link)
     resetMillis();
-    rcData[AUX2] = PWM_RANGE_MAX;
+    rcData[AUX2] = rcUsToNorm(PWM_RANGE_MAX);
     updateActivatedModes();
 
     // then: erase is withheld (this is the #15173 boot-time spurious-erase bug)
     EXPECT_FALSE(IS_RC_MODE_ACTIVE(BOXBLACKBOXERASE));
 
     // when: switch goes off and the boot delay elapses
-    rcData[AUX2] = PWM_RANGE_MIDDLE;
+    rcData[AUX2] = rcUsToNorm(PWM_RANGE_MIDDLE);
     fixedMillis = STICKY_MODE_BOOT_DELAY_US / 1000 + 1;
     updateActivatedModes();
 
@@ -361,14 +367,14 @@ TEST_F(RcControlsModesTest, updateActivatedModesBoxBlackboxEraseDoesNotLatchFore
     EXPECT_FALSE(IS_RC_MODE_ACTIVE(BOXBLACKBOXERASE));
 
     // when: switch is moved into range
-    rcData[AUX2] = PWM_RANGE_MAX;
+    rcData[AUX2] = rcUsToNorm(PWM_RANGE_MAX);
     updateActivatedModes();
 
     // then: mode activates normally
     EXPECT_TRUE(IS_RC_MODE_ACTIVE(BOXBLACKBOXERASE));
 
     // when: switch is moved back out of range
-    rcData[AUX2] = PWM_RANGE_MIDDLE;
+    rcData[AUX2] = rcUsToNorm(PWM_RANGE_MIDDLE);
     updateActivatedModes();
 
     // then: unlike BOXPARALYZE, this must turn off again so blackboxUpdate() can
@@ -478,7 +484,7 @@ TEST_F(RcControlsAdjustmentsTest, processRcAdjustmentsSticksInMiddle)
 
     // and
     for (int index = AUX1; index < MAX_SUPPORTED_RC_CHANNEL_COUNT; index++) {
-        rcData[index] = PWM_RANGE_MIDDLE;
+        rcData[index] = rcUsToNorm(PWM_RANGE_MIDDLE);
     }
 
     // and
@@ -524,7 +530,7 @@ TEST_F(RcControlsAdjustmentsTest, processRcAdjustmentsWithRcRateFunctionSwitchUp
 
     // and
     for (int index = AUX1; index < MAX_SUPPORTED_RC_CHANNEL_COUNT; index++) {
-        rcData[index] = PWM_RANGE_MIDDLE;
+        rcData[index] = rcUsToNorm(PWM_RANGE_MIDDLE);
     }
 
     // and
@@ -532,7 +538,7 @@ TEST_F(RcControlsAdjustmentsTest, processRcAdjustmentsWithRcRateFunctionSwitchUp
     resetMillis();
 
     // and
-    rcData[AUX3] = PWM_RANGE_MAX;
+    rcData[AUX3] = rcUsToNorm(PWM_RANGE_MAX);
 
     // and
     fixedMillis = 496;
@@ -567,7 +573,7 @@ TEST_F(RcControlsAdjustmentsTest, processRcAdjustmentsWithRcRateFunctionSwitchUp
 
 
     // given
-    rcData[AUX3] = PWM_RANGE_MIDDLE;
+    rcData[AUX3] = rcUsToNorm(PWM_RANGE_MIDDLE);
 
     // and
     fixedMillis = 498;
@@ -584,7 +590,7 @@ TEST_F(RcControlsAdjustmentsTest, processRcAdjustmentsWithRcRateFunctionSwitchUp
     // flipping the switch again, before the state reset would have occurred, allows the value to be increased again
 
     // given
-    rcData[AUX3] = PWM_RANGE_MAX;
+    rcData[AUX3] = rcUsToNorm(PWM_RANGE_MAX);
 
     // and
     fixedMillis = 499;
@@ -657,7 +663,7 @@ TEST_F(RcControlsAdjustmentsTest, processRcRateProfileAdjustments)
 
     // and
     for (int index = AUX1; index < MAX_SUPPORTED_RC_CHANNEL_COUNT; index++) {
-        rcData[index] = PWM_RANGE_MIDDLE;
+        rcData[index] = rcUsToNorm(PWM_RANGE_MIDDLE);
     }
 
     // and
@@ -665,7 +671,7 @@ TEST_F(RcControlsAdjustmentsTest, processRcRateProfileAdjustments)
     resetMillis();
 
     // and
-    rcData[AUX4] = PWM_RANGE_MAX;
+    rcData[AUX4] = rcUsToNorm(PWM_RANGE_MAX);
 
     // when
     processRcAdjustments(&controlRateConfig);
@@ -682,7 +688,7 @@ TEST_F(RcControlsAdjustmentsTest, processRcRateProfileAdjustmentsIgnoresUnchange
 
     // and
     for (int index = AUX1; index < MAX_SUPPORTED_RC_CHANNEL_COUNT; index++) {
-        rcData[index] = PWM_RANGE_MIDDLE;
+        rcData[index] = rcUsToNorm(PWM_RANGE_MIDDLE);
     }
 
     // and
@@ -690,7 +696,7 @@ TEST_F(RcControlsAdjustmentsTest, processRcRateProfileAdjustmentsIgnoresUnchange
     resetMillis();
 
     // and
-    rcData[AUX4] = PWM_RANGE_MAX - 0.5f;
+    rcData[AUX4] = rcUsToNorm(PWM_RANGE_MAX - 0.5f);
 
     // when
     processRcAdjustments(&controlRateConfig);
@@ -711,9 +717,9 @@ TEST_F(RcControlsAdjustmentsTest, processHorizonStrengthSelectDoesNotWrapAtHighI
 
     // and
     for (int index = AUX1; index < MAX_SUPPORTED_RC_CHANNEL_COUNT; index++) {
-        rcData[index] = PWM_RANGE_MIDDLE;
+        rcData[index] = rcUsToNorm(PWM_RANGE_MIDDLE);
     }
-    rcData[AUX4] = PWM_RANGE_MAX;
+    rcData[AUX4] = rcUsToNorm(PWM_RANGE_MAX);
 
     // when
     processRcAdjustments(&controlRateConfig);
@@ -757,7 +763,7 @@ TEST_F(RcControlsAdjustmentsTest, processPIDIncreasePidController0)
 
     // and
     for (int index = AUX1; index < MAX_SUPPORTED_RC_CHANNEL_COUNT; index++) {
-        rcData[index] = PWM_RANGE_MIDDLE;
+        rcData[index] = rcUsToNorm(PWM_RANGE_MIDDLE);
     }
 
     // and
@@ -765,9 +771,9 @@ TEST_F(RcControlsAdjustmentsTest, processPIDIncreasePidController0)
     resetMillis();
 
     // and
-    rcData[AUX1] = PWM_RANGE_MAX;
-    rcData[AUX2] = PWM_RANGE_MAX;
-    rcData[AUX3] = PWM_RANGE_MAX;
+    rcData[AUX1] = rcUsToNorm(PWM_RANGE_MAX);
+    rcData[AUX2] = rcUsToNorm(PWM_RANGE_MAX);
+    rcData[AUX3] = rcUsToNorm(PWM_RANGE_MAX);
 
     // when
     currentPidProfile = &pidProfile;
@@ -795,11 +801,118 @@ TEST_F(RcControlsAdjustmentsTest, processPIDIncreasePidController0)
     EXPECT_EQ(28, pidProfile.pid[PID_YAW].D);
 }
 
+class RcControlsStickCommandsTest : public ::testing::Test {
+protected:
+    virtual void SetUp() {
+        PG_RESET(rxConfig);
+        rxConfigMutable()->mincheck = DEFAULT_MIN_CHECK;
+        rxConfigMutable()->maxcheck = DEFAULT_MAX_CHECK;
+        rxConfigMutable()->midrc = 1500;
+        systemConfigMutable()->enableStickProfileSwitch = true;
+
+        boxBitmask_t noModes;
+        memset(&noModes, 0, sizeof(noModes));
+        rcModeUpdate(&noModes);
+
+        armingFlags = 0;
+        flightModeFlags = 0;
+
+        // centre the sticks so the stick state from a previous test is released
+        holdSticks(PWM_RANGE_MIDDLE, PWM_RANGE_MIDDLE, PWM_RANGE_MIDDLE, PWM_RANGE_MIDDLE);
+        resetCallCounters();
+    }
+
+    // hold the sticks long enough for a disarmed stick command to fire
+    void holdSticks(float roll, float pitch, float yaw, float throttle) {
+        for (int index = AUX1; index < MAX_SUPPORTED_RC_CHANNEL_COUNT; index++) {
+            rcData[index] = rcUsToNorm(PWM_RANGE_MIDDLE);
+        }
+        rcData[ROLL] = rcUsToNorm(roll);
+        rcData[PITCH] = rcUsToNorm(pitch);
+        rcData[YAW] = rcUsToNorm(yaw);
+        rcData[THROTTLE] = rcUsToNorm(throttle);
+        for (int i = 0; i < 5; i++) {
+            processRcStickPositions();
+        }
+    }
+
+    void activateStickCommandDisable(void) {
+        boxBitmask_t modes;
+        memset(&modes, 0, sizeof(modes));
+        bitArraySet(&modes, BOXSTICKCOMMANDDISABLE);
+        rcModeUpdate(&modes);
+    }
+};
+
+TEST_F(RcControlsStickCommandsTest, pidProfileStickCommandChangesProfileWhenEnabled)
+{
+    // when: throttle low, yaw left, pitch up
+    holdSticks(PWM_RANGE_MIDDLE, PWM_RANGE_MAX, PWM_RANGE_MIN, PWM_RANGE_MIN);
+
+    // then
+    EXPECT_EQ(1, CALL_COUNTER(COUNTER_CHANGE_PID_PROFILE));
+}
+
+TEST_F(RcControlsStickCommandsTest, rateProfileStickCommandChangesProfileWhenEnabled)
+{
+    // when: throttle high, yaw centre, roll right (acro)
+    holdSticks(PWM_RANGE_MAX, PWM_RANGE_MIDDLE, PWM_RANGE_MIDDLE, PWM_RANGE_MAX);
+
+    // then
+    EXPECT_EQ(1, CALL_COUNTER(COUNTER_CHANGE_CONTROL_RATE_PROFILE));
+}
+
+TEST_F(RcControlsStickCommandsTest, profileStickCommandsIgnoredWhenEnableStickProfileSwitchOff)
+{
+    // given
+    systemConfigMutable()->enableStickProfileSwitch = false;
+
+    // when
+    holdSticks(PWM_RANGE_MIN, PWM_RANGE_MIDDLE, PWM_RANGE_MIN, PWM_RANGE_MIN);   // PID profile 1
+    holdSticks(PWM_RANGE_MIDDLE, PWM_RANGE_MAX, PWM_RANGE_MIN, PWM_RANGE_MIN);   // PID profile 2
+    holdSticks(PWM_RANGE_MAX, PWM_RANGE_MIDDLE, PWM_RANGE_MIN, PWM_RANGE_MIN);   // PID profile 3
+    holdSticks(PWM_RANGE_MIDDLE, PWM_RANGE_MAX, PWM_RANGE_MIDDLE, PWM_RANGE_MAX); // rate profile 1
+    holdSticks(PWM_RANGE_MIDDLE, PWM_RANGE_MIN, PWM_RANGE_MIDDLE, PWM_RANGE_MAX); // rate profile 2
+    holdSticks(PWM_RANGE_MAX, PWM_RANGE_MIDDLE, PWM_RANGE_MIDDLE, PWM_RANGE_MAX); // rate profile 3
+    holdSticks(PWM_RANGE_MIN, PWM_RANGE_MIDDLE, PWM_RANGE_MIDDLE, PWM_RANGE_MAX); // rate profile 4
+
+    // then
+    EXPECT_EQ(0, CALL_COUNTER(COUNTER_CHANGE_PID_PROFILE));
+    EXPECT_EQ(0, CALL_COUNTER(COUNTER_CHANGE_CONTROL_RATE_PROFILE));
+}
+
+TEST_F(RcControlsStickCommandsTest, profileStickCommandsIgnoredWhenArmed)
+{
+    // given
+    ENABLE_ARMING_FLAG(ARMED);
+
+    // when
+    holdSticks(PWM_RANGE_MIDDLE, PWM_RANGE_MAX, PWM_RANGE_MIN, PWM_RANGE_MIN);
+    holdSticks(PWM_RANGE_MAX, PWM_RANGE_MIDDLE, PWM_RANGE_MIDDLE, PWM_RANGE_MAX);
+
+    // then
+    EXPECT_EQ(0, CALL_COUNTER(COUNTER_CHANGE_PID_PROFILE));
+    EXPECT_EQ(0, CALL_COUNTER(COUNTER_CHANGE_CONTROL_RATE_PROFILE));
+}
+
+TEST_F(RcControlsStickCommandsTest, profileStickCommandsIgnoredWhenStickCommandDisableActive)
+{
+    // given
+    activateStickCommandDisable();
+
+    // when
+    holdSticks(PWM_RANGE_MIDDLE, PWM_RANGE_MAX, PWM_RANGE_MIN, PWM_RANGE_MIN);
+    holdSticks(PWM_RANGE_MAX, PWM_RANGE_MIDDLE, PWM_RANGE_MIDDLE, PWM_RANGE_MAX);
+
+    // then
+    EXPECT_EQ(0, CALL_COUNTER(COUNTER_CHANGE_PID_PROFILE));
+    EXPECT_EQ(0, CALL_COUNTER(COUNTER_CHANGE_CONTROL_RATE_PROFILE));
+}
+
 extern "C" {
 void setConfigDirty(void) {}
 void saveConfigAndNotify(void) {}
 void initRcProcessing(void) {}
-void changePidProfile(uint8_t) {}
 void changeBatteryProfile(uint8_t) {}
 uint8_t getCurrentBatteryProfileIndex(void) { return 0; }
 void pidInitConfig(const pidProfile_t *) {}

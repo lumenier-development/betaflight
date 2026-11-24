@@ -87,7 +87,7 @@
 #ifdef USE_HAL_DRIVER
 #define BB_GPIO_PULLDOWN GPIO_PULLDOWN
 #define BB_GPIO_PULLUP   GPIO_PULLUP
-#elif defined(AT32F435)
+#elif defined(AT32F435) || defined(CH32H4)
 #define BB_GPIO_PULLDOWN GPIO_PULL_DOWN
 #define BB_GPIO_PULLUP GPIO_PULL_UP
 #elif defined(X32M7)
@@ -133,6 +133,19 @@ typedef struct dmaRegCache_s {
     uint32_t CHPADDR;
     uint32_t CHM0ADDR;
     uint32_t CHFCTL;
+#elif defined(CH32H4)
+    uint32_t CFGR;
+    uint32_t CNTR;
+    uint32_t PADDR;
+    uint32_t MADDR;
+    uint32_t M1ADDR;
+#elif defined(UM324xF)
+    uint32_t SAR;
+    uint32_t DAR;
+    uint32_t CTLL;
+    uint32_t CTLH;
+    uint32_t CFGL;
+    uint32_t CFGH;
 #else
 #error No MCU dependent code here
 #endif
@@ -144,6 +157,13 @@ typedef struct dmaRegCache_s {
 typedef struct bbPacer_s {
     timerResource_t *tim;
     uint16_t dmaSources;
+#ifdef CH32H4
+    uint16_t armedOutputSources;
+    volatile uint16_t pendingOutputSources;
+    volatile uint16_t pendingInputSources;
+    uint16_t outputARR;
+    uint16_t inputARR;
+#endif
 } bbPacer_t;
 
 #ifdef AT32F435
@@ -170,6 +190,7 @@ typedef struct bbPort_s {
     uint16_t dmaSource;
 
     dmaResource_t *dmaResource; // DMA resource for this port & timer channel
+    dmaChannelDescriptor_t *dmaDescriptor;
     uint32_t dmaChannel;        // DMA channel or peripheral request
 
     uint8_t direction;
@@ -187,6 +208,14 @@ typedef struct bbPort_s {
 
     // Idle value
     uint32_t gpioIdleBSRR;
+
+#ifdef CH32H4
+    bbPacer_t *pacer;
+    uint32_t gpioCfgLrMask, gpioCfgHrMask;
+    uint32_t gpioCfgLrOutput, gpioCfgHrOutput;
+    uint32_t gpioCfgLrInput, gpioCfgHrInput;
+    uint32_t gpioInputBSRR;
+#endif
 
 #ifdef USE_HAL_DRIVER
     LL_TIM_InitTypeDef timeBaseInit;
@@ -218,8 +247,23 @@ typedef struct bbPort_s {
     bool inputActive;
     volatile bool telemetryPending;
     bool telemetryAborted;
+#if defined(UM324xF)
+    volatile bool telemetryReady;
+#endif
 
     // Misc
+
+    // An output frame is running and its completion is still to come. Set by
+    // bbUpdateComplete() before it enables the stream, cleared by the DMA ISR
+    // when the frame completes and by bbUpdateComplete() when it gives the frame
+    // up. The ISR acts on an output completion only while this is set, so the
+    // completion raised by stopping a stalled stream starts no capture.
+    volatile bool outputPending;
+
+    // debug[2] has counted this port's failed frame. Cleared when the next frame
+    // starts, so a port still recovering, or held back by the DShot command
+    // gating, is counted once rather than on every update.
+    bool failureCounted;
 
     // Set by bbDMAServiceFlags() when a DMA transfer error left the stream's
     // registers unusable; cleared by bbUpdateComplete() once bbSwitchToOutput()
@@ -299,39 +343,24 @@ bool bbSwitchToOutput(bbPort_t * bbPort);
 void bbSwitchToInput(bbPort_t * bbPort);
 
 void bbTIM_TimeBaseInit(bbPort_t *bbPort, uint16_t period);
+#ifdef CH32H4
+void bbTIM_ReloadPeriod(void *TIMx, uint16_t period);
+#endif
 #ifdef AT32F435
 void bbTIM_DMACmd(void *TIMx, uint16_t TIM_DMASource, confirm_state NewState);
 #else
 void bbTIM_DMACmd(void *TIMx, uint16_t TIM_DMASource, FunctionalState NewState);
 #endif
 void bbDMA_ITConfig(bbPort_t *bbPort);
-#ifdef AT32F435
+#if defined(UM324xF)
+bool bbDMAStop(bbPort_t *bbPort);
+void bbDMAEnable(bbPort_t *bbPort);
+#elif defined(AT32F435)
 void bbDMA_Cmd(bbPort_t *bbPort, confirm_state NewState);
 #else
 void bbDMA_Cmd(bbPort_t *bbPort, FunctionalState NewState);
 #endif
 int  bbDMA_Count(bbPort_t *bbPort);
-
-// Disabling a stream is a request, not an act: the controller clears the enable
-// bit only once the in-flight transfer and any FIFO contents have drained, and
-// rewriting the configuration registers before then is forbidden and leaves the
-// stream in an undefined state (RM0090, DMA_SxCR: "It is forbidden to write
-// these registers when the EN bit is read as 1"). The drain is a single
-// non-burst transfer, so a handful of AHB cycles; the bound is only there so a
-// wedged stream cannot hang a motor update. Returns false if it never stopped,
-// in which case the caller must leave the stream alone.
-#define BB_DMA_STOP_SPIN_LIMIT 100
-
-static inline bool bbDMAWaitStopped(dmaResource_t *dmaResource)
-{
-    for (unsigned spin = 0; spin < BB_DMA_STOP_SPIN_LIMIT; spin++) {
-        if (!(IS_DMA_ENABLED(dmaResource))) {
-            return true;
-        }
-    }
-
-    return false;
-}
 
 // Every status bit a bitbang stream can leave set. A completed frame always
 // leaves HTIF behind - the flag is set by hardware whether or not HTIE is on,
@@ -352,6 +381,45 @@ static inline bool bbDMAWaitStopped(dmaResource_t *dmaResource)
 #else
 #define BB_DMA_FLAGS (DMA_IT_TCIF | DMA_IT_HTIF | DMA_IT_TEIF)
 #endif
+
+// Disabling a stream is a request, not an act: the controller clears the enable
+// bit only once the in-flight transfer and any FIFO contents have drained, and
+// rewriting the configuration registers before then is forbidden and leaves the
+// stream in an undefined state (RM0090, DMA_SxCR: "It is forbidden to write
+// these registers when the EN bit is read as 1"). The drain is a single
+// non-burst transfer, so a handful of AHB cycles; the bound is only there so a
+// wedged stream cannot hang a motor update. Returns false if it never stopped,
+// in which case the caller must leave the stream alone. Stopping a stream
+// mid-transfer raises TCIF (RM0090, "DMA transfer suspension").
+#define BB_DMA_STOP_SPIN_LIMIT 100
+
+static inline void bbDMAClearFlags(dmaChannelDescriptor_t *descriptor)
+{
+#if defined(UM324xF)
+    // DW DMA uses one per-channel bitmap register for each event type.
+    DMA_CLEAR_FLAG(descriptor, CLEARTFR);
+    DMA_CLEAR_FLAG(descriptor, CLEARBLOCK);
+    DMA_CLEAR_FLAG(descriptor, CLEARSRCTRAN);
+    DMA_CLEAR_FLAG(descriptor, CLEARDSTTRAN);
+    DMA_CLEAR_FLAG(descriptor, CLEARERR);
+#else
+    DMA_CLEAR_FLAG(descriptor, BB_DMA_FLAGS);
+#endif
+}
+
+static inline bool bbDMAWaitStopped(bbPort_t *bbPort)
+{
+    for (unsigned spin = 0; spin < BB_DMA_STOP_SPIN_LIMIT; spin++) {
+        if (!(IS_DMA_ENABLED(bbPort->dmaResource))) {
+            bbDMAClearFlags(bbPort->dmaDescriptor);
+            NVIC_ClearPendingIRQ((IRQn_Type)bbPort->dmaDescriptor->irqN);
+            bbPort->telemetryPending = false;
+            return true;
+        }
+    }
+
+    return false;
+}
 
 // Clear the stream's status flags, and report whether the transfer failed.
 // Returns true on a transfer error, in which case the port has been flagged for
@@ -380,9 +448,13 @@ static inline bool bbDMAWaitStopped(dmaResource_t *dmaResource)
 // drive the line against it (#15533).
 static inline bool bbDMAServiceFlags(bbPort_t *bbPort, dmaChannelDescriptor_t *descriptor)
 {
+#if defined(UM324xF)
+    const bool transferError = DMA_GET_FLAG_STATUS(descriptor, STATUSERR) != 0;
+#else
     const bool transferError = DMA_GET_FLAG_STATUS(descriptor, DMA_IT_TEIF) != 0;
+#endif
 
-    DMA_CLEAR_FLAG(descriptor, BB_DMA_FLAGS);
+    bbDMAClearFlags(descriptor);
 
     if (!transferError) {
         return false;
@@ -394,6 +466,16 @@ static inline bool bbDMAServiceFlags(bbPort_t *bbPort, dmaChannelDescriptor_t *d
     bbPort->reinitRequired = true;
 
     return true;
+}
+
+static inline bool bbDMAEventPending(dmaChannelDescriptor_t *descriptor)
+{
+#if defined(UM324xF)
+    return (DMA_GET_FLAG_STATUS(descriptor, STATUSBLOCK) != 0)
+        || (DMA_GET_FLAG_STATUS(descriptor, STATUSERR) != 0);
+#else
+    return DMA_GET_FLAG_STATUS(descriptor, DMA_IT_TCIF | DMA_IT_TEIF) != 0;
+#endif
 }
 
 void bbDshotRequestTelemetry(unsigned motorIndex);

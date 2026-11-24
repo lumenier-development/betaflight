@@ -80,14 +80,9 @@
 
 #include "telemetry/telemetry.h"
 
-// mavlink library uses unnamed unions that causes GCC to complain if -Wpedantic is used
-// until this is resolved in mavlink library - ignore -Wpedantic for mavlink code.
 // Included before telemetry/mavlink.h so its forward-typedef of mavlink_message_t
 // yields to the real (identical) one rather than clashing.
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wpedantic"
-#include "common/mavlink.h"
-#pragma GCC diagnostic pop
+#include "telemetry/mavlink_lib.h"
 
 #include "telemetry/mavlink.h"
 #if ENABLE_TELEMETRY_MAVLINK_MISSION
@@ -138,6 +133,9 @@ typedef struct {
     uint32_t properties;
 } bfMavModeDescriptor_t;
 
+// The mode set is fixed at build time, so its sequence number never changes
+#define BF_MAV_MODES_SEQ 1
+
 static const bfMavModeDescriptor_t bfMavModeDescriptors[BF_MAV_MODE_COUNT] = {
     [BF_MAV_MODE_ACRO]      = { "Acro",      MAV_STANDARD_MODE_NON_STANDARD,  0 },
     [BF_MAV_MODE_ANGLE]     = { "Angle",     MAV_STANDARD_MODE_NON_STANDARD,  0 },
@@ -181,8 +179,11 @@ static int16_t headingOrScaledMilliAmpereHoursDrawn(void)
 
 static void mavlinkSendStatusText(uint8_t severity, const char *text)
 {
+    // The packer copies the whole field width, so pad short strings out to it
+    char textField[MAVLINK_MSG_STATUSTEXT_FIELD_TEXT_LEN];
+    strncpy(textField, text, sizeof(textField));
     mavlink_msg_statustext_pack(MAVLINK_SYSTEM_ID, MAVLINK_COMPONENT_ID, &mavMsg,
-        severity, text, 0, 0);
+        severity, textField, 0, 0);
     const uint16_t msgLength = mavlink_msg_to_send_buffer(mavBuffer, &mavMsg);
     mavlinkSerialWrite(mavBuffer, msgLength);
 }
@@ -345,7 +346,7 @@ static void mavlinkSendProtocolVersion(void)
 static void mavlinkSendComponentInformation(void)
 {
     mavlink_msg_component_information_pack(MAVLINK_SYSTEM_ID, MAVLINK_COMPONENT_ID, &mavMsg,
-        millis(), 0, "", 0, "");
+        millis(), 0, NULL, 0, NULL); // NULL zero-fills the URI fields
     const uint16_t msgLength = mavlink_msg_to_send_buffer(mavBuffer, &mavMsg);
     mavlinkSerialWrite(mavBuffer, msgLength);
 }
@@ -383,6 +384,9 @@ static void mavlinkSendAvailableMode(uint8_t modeIndex)
     }
     const uint8_t idx0 = modeIndex - 1;
     const bfMavModeDescriptor_t *desc = &bfMavModeDescriptors[idx0];
+    // The packer copies the whole field width, so pad the name out to it
+    char modeName[MAVLINK_MSG_AVAILABLE_MODES_FIELD_MODE_NAME_LEN];
+    strncpy(modeName, desc->name, sizeof(modeName));
 
     mavlink_msg_available_modes_pack(MAVLINK_SYSTEM_ID, MAVLINK_COMPONENT_ID, &mavMsg,
         BF_MAV_MODE_COUNT,
@@ -390,14 +394,15 @@ static void mavlinkSendAvailableMode(uint8_t modeIndex)
         desc->standardMode,
         idx0,
         desc->properties,
-        desc->name);
+        modeName,
+        BF_MAV_MODES_SEQ);
     const uint16_t msgLength = mavlink_msg_to_send_buffer(mavBuffer, &mavMsg);
     mavlinkSerialWrite(mavBuffer, msgLength);
 }
 
 static void mavlinkSendAvailableModesMonitor(void)
 {
-    mavlink_msg_available_modes_monitor_pack(MAVLINK_SYSTEM_ID, MAVLINK_COMPONENT_ID, &mavMsg, 1);
+    mavlink_msg_available_modes_monitor_pack(MAVLINK_SYSTEM_ID, MAVLINK_COMPONENT_ID, &mavMsg, BF_MAV_MODES_SEQ);
     const uint16_t msgLength = mavlink_msg_to_send_buffer(mavBuffer, &mavMsg);
     mavlinkSerialWrite(mavBuffer, msgLength);
 }
@@ -1220,7 +1225,7 @@ static void mavlinkSendHeartbeat(void)
         // type Type of the MAV (quadrotor, helicopter, etc., up to 15 types, defined in MAV_TYPE ENUM)
         mavSystemType,
         // autopilot Autopilot type / class. defined in MAV_AUTOPILOT ENUM
-        MAV_AUTOPILOT_GENERIC,
+        MAV_AUTOPILOT_BETAFLIGHT,
         // base_mode System mode bitfield, see MAV_MODE_FLAGS ENUM in mavlink/include/mavlink_types.h
         mavModes,
         // custom_mode A bitfield for use for autopilot-specific flags.

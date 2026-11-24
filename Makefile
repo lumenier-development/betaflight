@@ -200,7 +200,8 @@ HSE_VALUE       ?= 8000000
 CI_EXCLUDED_TARGETS := $(sort $(notdir $(patsubst %/,%,$(dir $(wildcard $(PLATFORM_DIR)/*/target/*/.exclude)))))
 CI_COMMON_TARGETS   := STM32F4DISCOVERY CRAZYBEEF4SX1280 CRAZYBEEF4FR MATEKF405TE AIRBOTG4AIO TBS_LUCID_FC IFLIGHT_BLITZ_F722 NUCLEOF446 SPRACINGH7EXTREME SPRACINGH7RF SITL_X_PLANE
 CI_TARGETS          := $(filter-out $(CI_EXCLUDED_TARGETS), $(BASE_TARGETS) $(filter $(CI_COMMON_TARGETS), $(BASE_CONFIGS)))
-PREVIEW_TARGETS     := MATEKF411 AIKONF4V2 AIRBOTG4AIO ZEEZF7V3 FOXEERF745V4_AIO KAKUTEH7 TBS_LUCID_FC SITL SPRACINGH7EXTREME SPRACINGH7RF
+PREVIEW_TARGETS     := MATEKF411 AIKONF4V2 AIRBOTG4AIO ZEEZF7V3 FOXEERF745V4_AIO KAKUTEH7 TBS_LUCID_FC SITL SPRACINGH7EXTREME SPRACINGH7RF \
+                       APM32F405 GD32H757VI RASPBERRY_PI_UAVFC ACROBOC562 OPENN657V1 X32M7B STM32H562 ESP32S3
 
 TARGET_PLATFORM     := $(notdir $(patsubst %/,%,$(subst target/$(TARGET)/,, $(dir $(wildcard $(PLATFORM_DIR)/*/target/$(TARGET)/target.mk)))))
 TARGET_PLATFORM_DIR := $(PLATFORM_DIR)/$(TARGET_PLATFORM)
@@ -319,7 +320,7 @@ endif
 include $(MAKE_SCRIPT_DIR)/openocd.mk
 
 INCLUDE_DIRS    := $(INCLUDE_DIRS) \
-                   $(ROOT)/lib/main/MAVLink
+                   $(ROOT)/lib/modules/mavlink
 
 INCLUDE_DIRS    := $(INCLUDE_DIRS) \
                    $(TARGET_DIR)
@@ -376,6 +377,17 @@ CC_NO_OPTIMISATION      := $(filter-out $(CFLAGS_DISABLED), $(CC_NO_OPTIMISATION
 
 
 # Extract version from the version header
+# The patch level comes from a YYYY.MM.N tag on HEAD matching the header's year and month, otherwise the header default applies
+FC_VERSION_YEAR  := $(call pp_def_value,src/main/build/version.h,FC_VERSION_YEAR)
+FC_VERSION_MONTH := $(call pp_def_value,src/main/build/version.h,FC_VERSION_MONTH)
+ifneq ($(wildcard .git),)
+FC_VERSION_PATCH_LEVEL := $(shell git tag --points-at HEAD 2>/dev/null | sed -n 's/^$(FC_VERSION_YEAR)\.$(FC_VERSION_MONTH)\.\([0-9]\{1,3\}\)$$/\1/p' | awk '$$1 <= 255 { print $$1 + 0 }' | sort -n | tail -n 1)
+endif
+ifneq ($(FC_VERSION_PATCH_LEVEL),)
+VERSION_FLAGS    := -DFC_VERSION_PATCH_LEVEL=$(FC_VERSION_PATCH_LEVEL)
+CPPFLAGS         += $(VERSION_FLAGS)
+endif
+
 # Expand FC_VERSION_STRING via the preprocessor; compute before finalizing CFLAGS
 FC_VER           := $(call pp_def_value_str,src/main/build/version.h,FC_VERSION_STRING)
 
@@ -407,6 +419,7 @@ CFLAGS     += $(ARCH_FLAGS) \
               -D'__MCU_NAME__="$(TARGET_MCU)"' \
               -D'__REVISION__="$(REVISION)"' \
               -D'__FC_VERSION__="$(FC_VER)"' \
+              $(VERSION_FLAGS) \
               $(CONFIG_REVISION_DEFINE) \
               -pipe \
               -MMD -MP \
@@ -497,9 +510,9 @@ TARGET_MAP      := $(OBJECT_DIR)/$(FORKNAME)_$(TARGET_NAME).map
 TARGET_EXST_HASH_SECTION_FILE := $(TARGET_OBJ_DIR)/exst_hash_section.bin
 
 ifeq ($(DEBUG_MIXED),yes)
-TARGET_EF_HASH      := $(shell echo -n -- "$(EXTRA_FLAGS)" "$(OPTIONS)" "$(DEVICE_FLAGS)" "$(TARGET_FLAGS)"  | openssl dgst -md5 -r | awk '{print $$1;}')
+TARGET_EF_HASH      := $(shell echo -n -- "$(EXTRA_FLAGS)" "$(OPTIONS)" "$(VERSION_FLAGS)" "$(DEVICE_FLAGS)" "$(TARGET_FLAGS)"  | openssl dgst -md5 -r | awk '{print $$1;}')
 else
-TARGET_EF_HASH      := $(shell echo -n -- "$(EXTRA_FLAGS)" "$(OPTIONS)" "$(DEBUG_FLAGS)" "$(DEVICE_FLAGS)" "$(TARGET_FLAGS)"  | openssl dgst -md5 -r | awk '{print $$1;}')
+TARGET_EF_HASH      := $(shell echo -n -- "$(EXTRA_FLAGS)" "$(OPTIONS)" "$(VERSION_FLAGS)" "$(DEBUG_FLAGS)" "$(DEVICE_FLAGS)" "$(TARGET_FLAGS)"  | openssl dgst -md5 -r | awk '{print $$1;}')
 endif
 
 TARGET_EF_HASH_FILE := $(TARGET_OBJ_DIR)/.efhash_$(TARGET_EF_HASH)
@@ -700,7 +713,17 @@ $(CONFIGS_CLEAN):
 clean_all: $(TARGETS_CLEAN) test_clean
 
 ## preview           : build one target for each platform and execute make test
-preview: $(PREVIEW_TARGETS) test
+# Hydrate the configs and platform SDKs first, one at a time: parallel
+# `git submodule update --init` runs contend for the .git/config lock.
+# The build then runs in a new make, so BASE_CONFIGS (resolved at parse
+# time) includes the configs hydrated here.
+.PHONY: preview preview_build
+preview:
+	$(V0) [ -d "$(CONFIG_DIR)/configs" ] || $(MAKE) -j1 configs
+	$(V0) $(MAKE) -j1 $(AUTOHYDRATE_STAMPS) platform-sdk-hydrate
+	$(V0) $(MAKE) preview_build
+
+preview_build: $(PREVIEW_TARGETS) test
 
 ## all_configs       : Build all configs
 all_configs: $(BASE_CONFIGS)
@@ -764,13 +787,23 @@ $(AUTOHYDRATE_STAMPS):
 	$(V1) git submodule update --init -- "$(@:/.git=)" \
 	    || { echo "submodule update failed: $(@:/.git=)"; exit 1; }
 
-# Drop .d files when a source is removed (deleted, moved, or promoted to
-# a submodule). gcc's -MMD pins the .o to the old path; without cleanup
-# make bails with "No rule to make target <old-path>". A manifest of all
+# Keep -MMD dependency files valid when a source is removed (deleted,
+# moved, or promoted to a submodule). -MP adds phony targets for headers,
+# but not for the source itself, so a .d whose source no longer exists makes
+# make bail with "No rule to make target <old-path>". A manifest of all
 # compiled sources is written to $(SRC_MANIFEST); on each build we compare
-# the current source list against it. If any sources were removed all .d
-# files are deleted so gcc can regenerate them cleanly. If nothing changed
-# the cost is a single cmp call.
+# the current source list against it. If any sources were removed, every .d
+# whose source (its first prerequisite) is missing is deleted together with
+# its .o, so the object is rebuilt with fresh dependencies. If nothing
+# changed the cost is a single cmp call.
+#
+# An object without a .d has no dependency tracking, so header changes would
+# not rebuild it. Every object is compiled with -MMD, so any such object is
+# deleted and rebuilt. This also repairs build directories where an earlier
+# version of this rule deleted all .d files but kept the objects.
+#
+# Compilation runs in a recursive make after this recipe, so deleting
+# objects here does not race with the compiler.
 .PHONY: validate-deps
 validate-deps:
 ifeq ($(V),1)
@@ -778,14 +811,26 @@ ifeq ($(V),1)
 endif
 	$(V1) mkdir -p "$(TARGET_OBJ_DIR)"; \
 	printf '%s\n' $(SRC) | sort > "$(SRC_MANIFEST).new"; \
-	if [ ! -f "$(SRC_MANIFEST)" ]; then \
-	    find "$(TARGET_OBJ_DIR)" -name '*.d' -delete 2>/dev/null; \
-	elif ! cmp -s "$(SRC_MANIFEST)" "$(SRC_MANIFEST).new"; then \
-	    if comm -23 "$(SRC_MANIFEST)" "$(SRC_MANIFEST).new" | grep -q .; then \
-	        echo "Sources removed — clearing stale dependency files"; \
-	        find "$(TARGET_OBJ_DIR)" -name '*.d' -delete 2>/dev/null; \
-	    fi; \
+	if [ ! -f "$(SRC_MANIFEST)" ] || comm -23 "$(SRC_MANIFEST)" "$(SRC_MANIFEST).new" | grep -q .; then \
+	    find "$(TARGET_OBJ_DIR)" -name '*.d' -print0 | xargs -0 awk ' \
+	        FNR == 1 { src = "" } \
+	        src == "" { \
+	            for (i = 1; i <= NF; i++) { \
+	                if ($$i != "\\" && $$i !~ /:$$/) { \
+	                    src = $$i; \
+	                    if ((getline line < src) < 0) print FILENAME; \
+	                    close(src); \
+	                    nextfile; \
+	                } \
+	            } \
+	        }' | while read -r dep; do \
+	        echo "Source removed - rebuilding $${dep%.d}.o"; \
+	        rm -f "$$dep" "$${dep%.d}.o"; \
+	    done; \
 	fi; \
+	for obj in $(TARGET_OBJS); do \
+	    [ ! -f "$$obj" ] || [ -f "$${obj%.o}.d" ] || rm -f "$$obj"; \
+	done; \
 	mv -f "$(SRC_MANIFEST).new" "$(SRC_MANIFEST)"
 
 .PHONY: binary
@@ -963,7 +1008,7 @@ targets-by-mcu:
 ## junittest         : run the Betaflight test suite, producing Junit XML result files.
 ## test-representative: run a representative subset of the Betaflight test suite (i.e. run all tests, but run each expanded test only for one target)
 ## test-all: run the Betaflight test suite including all per-target expanded tests
-test junittest test-all test-representative:
+test junittest test-all test-representative: $(AUTOHYDRATE_STAMPS)
 	$(V0) cd src/test && $(MAKE) $@
 
 ## test_help         : print the help message for the test suite (including a list of the available tests)
@@ -975,7 +1020,7 @@ test_versions:
 	$(V0) cd src/test && $(MAKE) versions
 
 ## test_%            : run test 'test_%' from the test suite
-test_%:
+test_%: $(AUTOHYDRATE_STAMPS)
 	$(V0) cd src/test && $(MAKE) $@
 
 $(TARGET_EF_HASH_FILE):

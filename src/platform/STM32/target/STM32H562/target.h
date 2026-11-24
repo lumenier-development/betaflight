@@ -57,7 +57,7 @@
 #define TARGET_IO_PORTD 0xffff
 #define TARGET_IO_PORTE 0xffff
 #define TARGET_IO_PORTF 0xffff
-//#define TARGET_IO_PORTG 0xffff
+#define TARGET_IO_PORTG 0xffff
 
 #define USE_I2C
 #define I2C_FULL_RECONFIGURABILITY
@@ -84,7 +84,7 @@
 
 #define USE_SPI
 #define SPI_FULL_RECONFIGURABILITY
-//#define USE_SPI_DMA_ENABLE_LATE
+#define USE_SPI_DMA_ENABLE_LATE
 
 #define USE_USB_DETECT
 
@@ -92,7 +92,6 @@
 
 #define USE_ADC
 #define USE_EXTI
-#define USE_TIMER_UP_CONFIG
 
 #define FLASH_PAGE_SIZE ((uint32_t)0x2000) // 8K sectors
 
